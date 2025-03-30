@@ -55,7 +55,7 @@ ui <- fluidPage(
 大約的 S 值與 p 值對照關係：
   S 值   |  p 值
   -------|---------
-  ≤ 1    | ≥ 0.5 (或表中 ≥ 0.36) - 幾乎沒有提供反對 H0 的資訊
+  ≤ 1    | ≥ 0.36- 幾乎沒有提供反對 H0 的資訊
   ≈ 2    | 0.18 - 0.35
   ≈ 3    | 0.1 - 0.17
   ≈ 4    | 0.05 - 0.09 (p=0.05 約為 S=4.3)
@@ -230,12 +230,15 @@ prior_prob <- input$prior_prob
 prior_odds <- prior_prob / (1 - prior_prob)
 posterior_75_bf <- (prior_odds * 3) / (1 + prior_odds * 3)
 posterior_91_bf <- (prior_odds * 10) / (1 + prior_odds * 10)
+posterior_25_bf <- (prior_odds * 1/3) / (1 + prior_odds * 1/3)
+posterior_9_bf <- (prior_odds * 1/10) / (1 + prior_odds * 1/10)
 cat(sprintf("若先驗機率 p(H1)=%.2f，則:\n", prior_prob))
 cat(sprintf("  當 BF10 = 3 時，後驗機率 ≈ %.2f\n", posterior_75_bf))
 cat(sprintf("  當 BF10 = 10 時，後驗機率 ≈ %.2f\n\n", posterior_91_bf))
-
+cat(sprintf("  當 BF10 = 1/3 時，後驗機率 ≈ %.2f\n", posterior_25_bf))
+cat(sprintf("  當 BF10 = 1/10 時，後驗機率 ≈ %.2f\n\n", posterior_9_bf))
         cat("\n--- 模擬參數 ---\n")
-        cat("固定樣本數 (n 每組):", results$n, "\n") # 
+        cat("固定樣本數 (每組):", results$n, "\n") # 
         cat("真實平均值差異 (Delta):", results$delta, "\n") # 
         cat("標準差 (SD):", results$sd, "\n") # 
         cat("理論標準誤 (SE):", sprintf("%.4f", results$theoretical_se), "\n") # 
