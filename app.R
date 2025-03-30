@@ -18,10 +18,6 @@ ui <- fluidPage(
         sidebarPanel(
             helpText("在固定樣本數'n'下執行多次模擬，觀察P值與貝氏因子 BF10 的分佈，以及特定結果的長期頻率。https://www.esci-dances.thenewstatistics.com/"),
 
-    sidebarLayout(
-        sidebarPanel(
-            helpText("在固定樣本數'n'下執行多次模擬，觀察P值與貝氏因子 BF10 的分佈，以及特定結果的長期頻率。https://www.esci-dances.thenewstatistics.com/"),
-
 # --- 新增：可折疊的驚訝值說明 ---
             tags$details(
                 tags$summary("顯示/隱藏：驚訝值 (S-value) 說明"), # Clickable title
