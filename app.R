@@ -23,6 +23,7 @@ ui <- fluidPage(
             numericInput("r_scale", "H1 的先驗: 科西分佈的尺度 0.707, cauchy(0, 0.707) 有 50% 在 -0.707 至 0.707, 有 95% 在 -4.659 至 4.659, 比常態分布更能容忍極端值", value = sqrt(2)/2, min = 0.1, step = 0.1) , # # Changed label slightly
             numericInput("num_sims", "模擬次數:", value = 1000, min = 100, max = 20000, step = 100) , # 
             actionButton("run_sim", "執行模擬", icon = icon("play")) , # 
+            sliderInput("prior_prob", "H1 的先驗機率 (p[H1]):", min = 0.01, max = 0.99, value = 0.5, step = 0.01) ,
             hr(),
             tags$b("目標條件:"),
             tags$ul(
@@ -40,7 +41,12 @@ ui <- fluidPage(
             fluidRow(
                 column(6, plotOutput("p_value_hist")),
                 column(6, plotOutput("bf_hist"))
-            )
+            ),
+
+            fluidRow(
+                 column(6, plotOutput("p_value_dance")),
+    column(6, plotOutput("bf_dance"))
+)
         )
     )
 )
@@ -116,13 +122,15 @@ server <- function(input, output, session) {
             }
             # *** 新增結束 ***
 
-
             percent_p_less_05 <- mean(p_values < 0.05) * 100 # 
             percent_ci_covers <- mean(ci_covers_delta) * 100 # 
             percent_bf_greater_3 <- mean(log10_bfs > log10(3)) * 100 # 
             percent_bf_greater_10 <- mean(log10_bfs > 1) * 100 #
   
             percent_p_less_005 <- mean(p_values < 0.005, na.rm = TRUE) * 100 # Calculate percentage for p < 0.005
+
+            percent_bf_less_1over3 <- mean(log10_bfs < log10(1/3)) * 100
+            percent_bf_less_1over10 <- mean(log10_bfs < log10(1/10)) * 100
 
             failed_sims <- n_sims - actual_sims_run # 
 
@@ -133,6 +141,8 @@ server <- function(input, output, session) {
                 percent_ci_covers = percent_ci_covers, # 
                 percent_bf_greater_3 = percent_bf_greater_3, # 
                 percent_bf_greater_10 = percent_bf_greater_10, # 
+                percent_bf_less_1over3 = percent_bf_less_1over3,
+                percent_bf_less_1over10 = percent_bf_less_1over10,
                 percent_p_less_005 = percent_p_less_005, #
 
                 n = n, # 
@@ -160,6 +170,15 @@ server <- function(input, output, session) {
          cat("H1 的後驗勝算= H1 的先驗勝算 x 貝氏因子 BF10\n")
          cat("勝算= 機率/(1-機率)，機率= 勝算/(勝算+1)\n")
           cat("若先驗勝算 1, 則 BF10=3, 10 時後驗機率=0.75, 0.91\n")
+
+prior_prob <- input$prior_prob
+prior_odds <- prior_prob / (1 - prior_prob)
+posterior_75_bf <- (prior_odds * 3) / (1 + prior_odds * 3)
+posterior_91_bf <- (prior_odds * 10) / (1 + prior_odds * 10)
+cat(sprintf("若先驗機率 p(H1)=%.2f，則:\n", prior_prob))
+cat(sprintf("  當 BF10 = 3 時，後驗機率 ≈ %.2f\n", posterior_75_bf))
+cat(sprintf("  當 BF10 = 10 時，後驗機率 ≈ %.2f\n\n", posterior_91_bf))
+
         cat("\n--- 模擬參數 ---\n")
         cat("固定樣本數 (n 每組):", results$n, "\n") # 
         cat("真實平均值差異 (Delta):", results$delta, "\n") # 
@@ -178,6 +197,8 @@ server <- function(input, output, session) {
         cat(" (注意: 這是模擬 n 次之後的結果, 但是單次 CI 包含真值的機率是 0 或 1）\n")
         cat(sprintf("BF10 > 3 (中等證據) 的模擬百分比: %.2f%%\n", results$percent_bf_greater_3)) # 
         cat(sprintf("BF10 > 10 (強證據) 的模擬百分比: %.2f%%\n", results$percent_bf_greater_10)) # 
+        cat(sprintf("BF10 < 1/3 (中等支持 H0) 的模擬百分比: %.2f%%\n", results$percent_bf_less_1over3))
+        cat(sprintf("BF10 < 1/10 (強支持 H0) 的模擬百分比: %.2f%%\n", results$percent_bf_less_1over10))
 
         # *** 新增：顯示超出範圍的點的訊息 ***
         if (results$num_outside_bf_range > 0) {
@@ -242,6 +263,27 @@ server <- function(input, output, session) {
             annotate("text", x = target_bf3_log10 + 0.05, y = Inf, label = "BF=3", color = "darkorange", hjust = 0, vjust = 1.5, family="sans") + # 
              annotate("text", x = target_bf10_log10 + 0.05, y = Inf, label = "BF=10", color = "darkred", hjust = 0, vjust = 1.5, family="sans") # 
     })
+
+output$p_value_dance <- renderPlot({
+  results <- simulation_results()
+  df <- data.frame(sim = seq_along(results$p_values), p = results$p_values)
+  ggplot(df, aes(x = sim, y = p)) +
+    geom_line(color = "steelblue") +
+    geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") +
+    labs(title = "P 值之舞", x = "模擬次數", y = "P 值") +
+    theme_minimal()
+})
+
+output$bf_dance <- renderPlot({
+  results <- simulation_results()
+  df <- data.frame(sim = seq_along(results$log10_bfs), log10bf = results$log10_bfs)
+  ggplot(df, aes(x = sim, y = log10bf)) +
+    geom_line(color = "darkgreen") +
+    geom_hline(yintercept = log10(3), linetype = "dashed", color = "orange") +
+    geom_hline(yintercept = log10(10), linetype = "dashed", color = "red") +
+    labs(title = "BF10 之舞 (log10)", x = "模擬次數", y = "log10(BF10)") +
+    theme_minimal()
+})
 
 } # Closing server function 
 
