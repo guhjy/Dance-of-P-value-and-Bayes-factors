@@ -12,6 +12,13 @@ ui <- fluidPage(
         tags$meta(name="viewport", content="width=device-width, initial-scale=1.0"),
         tags$script('Shiny.addCustomMessageHandler("setLocale", function(message) { try { Intl.NumberFormat("zh-TW"); } catch (e) { console.error("zh-TW locale not supported"); } });')
     ),
+    tags$style(HTML("
+  .selectize-dropdown-content .option {
+    white-space: normal;
+    word-break: break-word;
+  }
+"))
+),
     titlePanel("P 值與貝氏因子 BF10 的「跳舞」-為什麼單次試驗不可靠？"),
 
     sidebarLayout(
