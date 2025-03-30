@@ -18,10 +18,6 @@ ui <- fluidPage(
         sidebarPanel(
             helpText("在固定樣本數'n'下執行多次模擬，觀察P值與貝氏因子 BF10 的分佈，以及特定結果的長期頻率。https://www.esci-dances.thenewstatistics.com/"),
 
-# 定義使用者介面 (UI)
-ui <- fluidPage(
-    # ... (tags$head and titlePanel remain the same) 
-
     sidebarLayout(
         sidebarPanel(
             helpText("在固定樣本數'n'下執行多次模擬，觀察P值與貝氏因子 BF10 的分佈，以及特定結果的長期頻率。https://www.esci-dances.thenewstatistics.com/"),
