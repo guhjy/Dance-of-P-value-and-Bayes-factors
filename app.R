@@ -20,7 +20,9 @@ ui <- fluidPage(
 
 # --- 新增：可折疊的驚訝值說明 ---
             tags$details(
-                tags$summary("顯示/隱藏：驚訝值 (S-value) 說明"), # Clickable title
+  tags$summary("顯示/隱藏：驚訝值 (S-value) 說明"),
+  tags$pre("S-value 說明...")
+)
 # 使用 tags$pre() 來保留文字格式和換行
                 tags$pre(
 "驚訝值 S 提供另一種解釋 p 值的方式，用「位元 (bits)」量化相對於某個假設（通常是 H0）的「驚訝程度」或「資訊量」。
