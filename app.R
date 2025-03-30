@@ -224,7 +224,6 @@ server <- function(input, output, session) {
          cat("=先驗機率 x 似然率/邊際似然率\n")
          cat("H1 的後驗勝算= H1 的先驗勝算 x 貝氏因子 BF10\n")
          cat("勝算= 機率/(1-機率)，機率= 勝算/(勝算+1)\n")
-          cat("若先驗勝算 1, 則 BF10=3, 10 時後驗機率=0.75, 0.91\n")
 
 prior_prob <- input$prior_prob
 prior_odds <- prior_prob / (1 - prior_prob)
