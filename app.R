@@ -5,6 +5,7 @@ library(gganimate) # For creating animations
 library(dplyr)    # For data manipulation
 library(gifski)   # For rendering GIF animations
 library(DT)       # For creating interactive tables
+library(showtext) # For displaying UTF-8 characters (like Chinese) in plots
 
 # ==== UI Definition ====
 # Defines the user interface of the Shiny app
@@ -23,7 +24,8 @@ ui <- fluidPage(
       # Input for the sample size per group
       numericInput("n_per_group", "每組樣本數", value = 30, min = 5),
       # Input for the number of simulations to run
-      numericInput("n_sim", "模擬次數", value = 100, min = 50, step = 50),
+      # *** MODIFIED: Default value changed to 2000 for the table ***
+      numericInput("n_sim", "模擬次數 (表格用)", value = 2000, min = 100, step = 50), # Min set to 100 as graphs use 100
       # Dropdown to select the style of the animation (applies to both plots)
       selectInput("anim_style", "動畫風格",
                   choices = c("線條動畫" = "reveal",
@@ -40,15 +42,17 @@ ui <- fluidPage(
         # First tab: Displays the animations and summary table
         tabPanel("動態比較圖", # Renamed tab slightly
                  # Area for the p-value animation
-                 h4("p-value 之舞"), # Title for p-value plot
+                 # *** MODIFIED: Title indicates graph shows 100 simulations ***
+                 h4("p-value 之舞 (顯示前 100 次模擬)"), # Title for p-value plot
                  imageOutput("animated_plot_p", height = "350px"), # Output for p-value plot
                  hr(), # Separator line
                  # Area for the log(BF10) animation
-                 h4("log(BF₁₀) 之舞"), # Title for log(BF10) plot
+                 # *** MODIFIED: Title indicates graph shows 100 simulations ***
+                 h4("log(BF₁₀) 之舞 (顯示前 100 次模擬)"), # Title for log(BF10) plot
                  imageOutput("animated_plot_logbf", height = "350px"), # Output for log(BF10) plot
                  hr(), # Separator line
                  # Output for the summary data table
-                 h4("模擬結果摘要"), # Title for summary table
+                 h4("模擬結果摘要 (基於所有模擬次數)"), # Title for summary table
                  DTOutput("summary_table")),
         # Second tab: Displays explanations of statistical indicators
         tabPanel("說明與解釋", # Explanation tab
@@ -89,9 +93,16 @@ ui <- fluidPage(
 # Defines the server-side logic of the Shiny app
 server <- function(input, output, session) { # Added session argument
 
+  # *** ADDED: Enable showtext for UTF-8 character display in plots ***
+  showtext_auto()
+  # Optional: Specify a font that supports Chinese characters if needed
+  # Example: font_add_google("Noto Sans TC", "notosans") # Noto Sans Traditional Chinese
+  # Then you might need to add theme(text = element_text(family = "notosans")) to ggplot objects
+
   # --- Simulation Data Generation ---
 
   # Reactive expression to run the simulation when the 'go' button is pressed
+  # This generates data based on the user's input$n_sim (default 2000)
   simulate_data <- eventReactive(input$go, {
 
     # Helper function to compute Bayes Factor (BF10)
@@ -103,7 +114,16 @@ server <- function(input, output, session) { # Added session argument
       # Attempt calculation using BayesFactor package if available, otherwise use approximation
       if (requireNamespace("BayesFactor", quietly = TRUE)) {
         bf_result <- tryCatch({
-          BayesFactor::ttestBF(x = rnorm(n1), y = rnorm(n2, mean = t_stat * sqrt(1/n1 + 1/n2)), rscale = prior_sd) # Simulate data matching t-stat roughly
+          # Using rnorm to simulate data matching t-stat is an approximation for BF calculation
+          # A more direct calculation might be preferred if possible, but ttestBF needs data or summary stats
+          # Let's generate data that would *approximately* yield the t-stat
+          # We need to solve for the mean difference (md) given t = md / (sd * sqrt(1/n1 + 1/n2))
+          # Assuming pooled sd = 1 for simplicity here, md = t_stat * sqrt(1/n1 + 1/n2)
+          mean_diff_approx <- t_stat * sqrt(1/n1 + 1/n2)
+          # Generate data with this mean difference
+          x_sim <- rnorm(n1, mean = 0, sd = 1) # Group 1 centered at 0
+          y_sim <- rnorm(n2, mean = mean_diff_approx, sd = 1) # Group 2 with the mean difference
+          BayesFactor::ttestBF(x = x_sim, y = y_sim, rscale = prior_sd)
         }, error = function(e) NULL)
 
         if (!is.null(bf_result) && inherits(bf_result, "BFBayesFactor")) {
@@ -114,17 +134,27 @@ server <- function(input, output, session) { # Added session argument
         }
       }
       # Fallback approximation if BayesFactor package is not available or fails
+      # This approximation is likely less accurate than using the package
       se <- sqrt(1 / n1 + 1 / n2)
-      likelihood_h1_at_0 <- dnorm(0, mean = t_stat * se, sd = se)
-      prior_at_0 <- dnorm(0, mean = 0, sd = prior_sd)
-      # Avoid division by zero or near-zero
-      if (abs(likelihood_h1_at_0) < .Machine$double.eps) return(NA_real_)
-      bf10 <- prior_at_0 / likelihood_h1_at_0
-      # Prevent Inf or NaN results
-      if (is.infinite(bf10) || is.nan(bf10)) {
-          return(NA_real_) # Return NA_real_ for consistency
-      }
-      return(bf10)
+      likelihood_h1_at_effect <- dnorm(t_stat * se, mean = 0, sd = se) # Likelihood under H0 (effect=0)
+      # Average likelihood under H1 requires integration over the prior
+      # Using a simple approximation: likelihood at prior mean (0) scaled by prior density at 0
+      # This is NOT a standard or necessarily accurate way to approximate BF
+      # A better approximation might involve numerical integration or specific formulas (e.g., Wagenmakers et al., 2001 JMP)
+      # For now, retaining the simplified (potentially inaccurate) fallback:
+      prior_density_at_0 <- dnorm(0, mean = 0, sd = prior_sd) # Prior density for effect=0 under H1
+      likelihood_h0 <- dnorm(t_stat * se, mean = 0, sd = se) # Likelihood under H0 (effect=0)
+
+      # A common approximation for the Savage-Dickey density ratio: BF01 = posterior(0) / prior(0)
+      # BF10 = prior(0) / posterior(0). This still requires the posterior.
+      # Let's use a known formula approximation (Rouder et al., 2009, Psychon Bull Rev)
+      # Note: This requires the Jeffreys-Zellner-Siow prior (Cauchy prior on effect size, Jeffreys prior on variance)
+      # The 'rscale' in BayesFactor corresponds to the scale of the Cauchy prior on the standardized effect size (delta)
+      # The formula is complex. Using the package is highly recommended.
+      # Reverting to a placeholder NA if package fails, as the previous fallback was questionable.
+      # warning("BayesFactor package failed or not installed. BF10 calculation skipped.")
+      return(NA_real_) # Return NA if package method fails
+
     }
 
     # Helper function to compute posterior probability P(H1) from BF10
@@ -149,7 +179,7 @@ server <- function(input, output, session) { # Added session argument
 
     # Set seed for reproducibility
     set.seed(123)
-    # Run the simulation 'n_sim' times
+    # Run the simulation 'n_sim' times (user input, default 2000)
     results <- lapply(1:input$n_sim, function(i) {
       # Generate data based on d_true
       g1 <- rnorm(input$n_per_group, mean = 0, sd = 1)
@@ -185,7 +215,6 @@ server <- function(input, output, session) { # Added session argument
     df_final <- do.call(rbind, results)
 
     # Ensure columns that should be numeric are numeric
-    # (Should be less necessary with NA_real_ usage, but good practice)
     df_final$p <- as.numeric(df_final$p)
     df_final$bf10 <- as.numeric(df_final$bf10)
     df_final$log_bf10 <- as.numeric(df_final$log_bf10)
@@ -197,14 +226,20 @@ server <- function(input, output, session) { # Added session argument
 
   # --- Render p-value Animation ---
   output$animated_plot_p <- renderImage({
-    df <- simulate_data()
-    if (!is.data.frame(df) || nrow(df) == 0) {
+    df_full <- simulate_data() # Get potentially large dataset (e.g., 2000 sims)
+    if (!is.data.frame(df_full) || nrow(df_full) == 0) {
          return(list(src = "", contentType = 'image/gif', alt = "請點擊「開始模擬」產生資料"))
     }
+
+    # *** MODIFIED: Subset to first 100 simulations for the graph ***
+    n_plot_sims <- 100
+    df <- head(df_full, n_plot_sims)
+    actual_sims_in_df <- nrow(df) # How many sims are we actually plotting (<= 100)
+
     # Clean data for p-value plot
     df_clean_p <- df[!is.na(df$p), ]
     if (nrow(df_clean_p) == 0) {
-         return(list(src = "", contentType = 'image/gif', alt = "無有效的 p-value 資料可繪圖"))
+         return(list(src = "", contentType = 'image/gif', alt = "前 100 次模擬中無有效的 p-value 資料可繪圖"))
     }
 
     # Select animation style
@@ -214,21 +249,24 @@ server <- function(input, output, session) { # Added session argument
                          "time" = transition_time(sim))
 
     # Create p-value plot
+    # *** MODIFIED: Update title to show actual number plotted vs. requested (100) ***
     p_plot <- ggplot(df_clean_p, aes(x = sim, y = p)) +
       geom_line(color = "steelblue") +
       geom_point(size = 2, color = "orange") +
       geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") + # Significance threshold
       geom_hline(yintercept = 0.005, linetype = "dotted", color = "darkred") + # Add 0.005 threshold
-      labs(x = "模擬次數", y = "p-value",
-           title = paste("p-value 之舞 (", nrow(df_clean_p), "/", input$n_sim, " 次有效模擬)", sep="")) +
+      labs(x = "模擬次數 (前 100 次)", y = "p-value", # Modified x-axis label
+           title = paste("p-value 之舞 (顯示 ", nrow(df_clean_p), "/", actual_sims_in_df, " 次有效模擬)", sep="")) + # Modified title
       scale_y_continuous(limits = c(0, 1)) + # Ensure y-axis is 0 to 1
       anim_style +
-      theme_minimal()
+      theme_minimal() # showtext will handle font rendering
 
     # Save and return GIF
     anim_file_p <- tempfile(fileext = ".gif")
     anim_result_p <- tryCatch({
         if (!requireNamespace("gifski", quietly = TRUE)) stop("gifski package needed.")
+        # *** ADDED: Use showtext device wrapper for saving ***
+        showtext_opts(dpi = 96) # Set DPI for consistency if needed
         anim_save(anim_file_p, animate(p_plot, fps = 15, width = 600, height = 350, renderer = gifski_renderer()))
         list(src = anim_file_p, contentType = 'image/gif')
     }, error = function(e) {
@@ -237,6 +275,10 @@ server <- function(input, output, session) { # Added session argument
         if (!requireNamespace("gifski", quietly = TRUE)) {
             msg <- paste(msg, "請安裝 'gifski' 套件。")
         }
+        # *** ADDED: Mention showtext in error if relevant ***
+        if (grepl("showtext", e$message, ignore.case = TRUE)) {
+           msg <- paste(msg, "請確認 'showtext' 套件已安裝且字體可用。")
+        }
         list(src = "", contentType = 'image/gif', alt = msg)
     })
     return(anim_result_p)
@@ -244,14 +286,20 @@ server <- function(input, output, session) { # Added session argument
 
   # --- Render log(BF10) Animation ---
   output$animated_plot_logbf <- renderImage({
-    df <- simulate_data()
-     if (!is.data.frame(df) || nrow(df) == 0) {
+    df_full <- simulate_data() # Get potentially large dataset (e.g., 2000 sims)
+     if (!is.data.frame(df_full) || nrow(df_full) == 0) {
          return(list(src = "", contentType = 'image/gif', alt = "請點擊「開始模擬」產生資料"))
     }
+
+    # *** MODIFIED: Subset to first 100 simulations for the graph ***
+    n_plot_sims <- 100
+    df <- head(df_full, n_plot_sims)
+    actual_sims_in_df <- nrow(df) # How many sims are we actually plotting (<= 100)
+
     # Clean data for log(BF10) plot (remove NA and non-finite values)
     df_clean_logbf <- df[!is.na(df$log_bf10) & is.finite(df$log_bf10), ]
      if (nrow(df_clean_logbf) == 0) {
-         return(list(src = "", contentType = 'image/gif', alt = "無有效的 log(BF10) 資料可繪圖"))
+         return(list(src = "", contentType = 'image/gif', alt = "前 100 次模擬中無有效的 log(BF10) 資料可繪圖"))
      }
 
     # Select animation style (same as p-value plot)
@@ -260,7 +308,7 @@ server <- function(input, output, session) { # Added session argument
                          "states" = transition_states(sim, transition_length = 2, state_length = 1),
                          "time" = transition_time(sim))
 
-    # Determine y-axis limits dynamically but capped for readability
+    # Determine y-axis limits dynamically but capped for readability (based on the 100 sims)
     y_min <- min(df_clean_logbf$log_bf10, na.rm = TRUE)
     y_max <- max(df_clean_logbf$log_bf10, na.rm = TRUE)
     # Cap the limits to avoid extreme scales if there are outliers
@@ -274,6 +322,7 @@ server <- function(input, output, session) { # Added session argument
 
 
     # Create log(BF10) plot
+    # *** MODIFIED: Update title and x-axis label ***
     logbf_plot <- ggplot(df_clean_logbf, aes(x = sim, y = log_bf10)) +
       geom_line(color = "darkgreen") + # Different color
       geom_point(size = 2, color = "purple") + # Different color
@@ -283,11 +332,11 @@ server <- function(input, output, session) { # Added session argument
       geom_hline(yintercept = log(1/3), linetype = "dashed", color = "red", alpha=0.7) + # Moderate Evidence H0
       geom_hline(yintercept = log(1/10), linetype = "dotted", color = "darkred", alpha=0.7) + # Strong Evidence H0
       scale_y_continuous(limits = c(y_lim_lower, y_lim_upper)) + # Apply dynamic limits
-      labs(x = "模擬次數", y = "log(BF₁₀)",
-           title = paste("log(BF₁₀) 之舞 (", nrow(df_clean_logbf), "/", input$n_sim, " 次有效模擬)", sep=""),
+      labs(x = "模擬次數 (前 100 次)", y = "log(BF₁₀)", # Modified x-axis label
+           title = paste("log(BF₁₀) 之舞 (顯示 ", nrow(df_clean_logbf), "/", actual_sims_in_df, " 次有效模擬)", sep=""), # Modified title
            caption = "水平線: log(10), log(3), 0, log(1/3), log(1/10)") +
       anim_style +
-      theme_minimal() +
+      theme_minimal() + # showtext will handle font rendering
       theme(plot.caption = element_text(hjust = 0.5, size=9, color="gray30")) # Add caption style
 
 
@@ -295,6 +344,8 @@ server <- function(input, output, session) { # Added session argument
     anim_file_logbf <- tempfile(fileext = ".gif")
     anim_result_logbf <- tryCatch({
         if (!requireNamespace("gifski", quietly = TRUE)) stop("gifski package needed.")
+        # *** ADDED: Use showtext device wrapper for saving ***
+        showtext_opts(dpi = 96) # Set DPI for consistency if needed
         anim_save(anim_file_logbf, animate(logbf_plot, fps = 15, width = 600, height = 350, renderer = gifski_renderer()))
         list(src = anim_file_logbf, contentType = 'image/gif')
     }, error = function(e) {
@@ -303,14 +354,19 @@ server <- function(input, output, session) { # Added session argument
         if (!requireNamespace("gifski", quietly = TRUE)) {
             msg <- paste(msg, "請安裝 'gifski' 套件。")
         }
+         # *** ADDED: Mention showtext in error if relevant ***
+        if (grepl("showtext", e$message, ignore.case = TRUE)) {
+           msg <- paste(msg, "請確認 'showtext' 套件已安裝且字體可用。")
+        }
         list(src = "", contentType = 'image/gif', alt = msg)
     })
     return(anim_result_logbf)
   }, deleteFile = TRUE)
 
   # --- Render Summary Table ---
+  # This uses the full dataset from simulate_data() (default 2000 sims)
   output$summary_table <- renderDT({
-    df <- simulate_data()
+    df <- simulate_data() # Uses full simulation data
     # Ensure df is a data frame before proceeding
     if (!is.data.frame(df) || nrow(df) == 0) {
         return(datatable(data.frame(Message = "請點擊「開始模擬」產生資料"), options = list(dom = 't', searching = FALSE, info = FALSE), rownames = FALSE))
@@ -347,7 +403,7 @@ server <- function(input, output, session) { # Added session argument
       mean(logical_vector, na.rm = TRUE)
     }
 
-    # Calculate proportions safely
+    # Calculate proportions safely using the full dataset
     p_prop_05 <- calc_mean_prop(df$p < 0.05)
     p_prop_005 <- calc_mean_prop(df$p < 0.005)
     bf10_pos_3 <- calc_mean_prop(df$bf10 > 3)
