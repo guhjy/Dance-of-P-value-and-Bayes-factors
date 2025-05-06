@@ -11,7 +11,7 @@ library(showtext) # For displaying UTF-8 characters (like Chinese) in plots
 # Defines the user interface of the Shiny app
 ui <- fluidPage(
   # Set the title of the application window/tab
-  titlePanel("p 值之舞 與 log(BF₁₀) 之舞"), # Updated title reflecting dual plots
+  titlePanel("p 值之舞與 log(BF₁₀) 之舞"), # Updated title reflecting dual plots
 
   # Define the layout: sidebar and main panel
   sidebarLayout(
@@ -62,8 +62,8 @@ ui <- fluidPage(
                      <li><b>當 H₀ 為真時 (真實效應量 d = 0)：</b> 在多次重複實驗下，p 值的分布會是<b>均勻分佈 (Uniform Distribution)</b> 在 0 到 1 之間。這意味著，如果 H₀ 真的成立，有 α% 的實驗會錯誤地得到 p < α 的結果 (即 Type I error rate)。例如，當 α = 0.05，即使沒有真實效應，也有 5% 的機率會觀察到 p < 0.05。</li>
                      <li><b>當 H₁ 為真時 (真實效應量 d ≠ 0)：</b> 在多次重複實驗下，p 值的分布會偏向 0。真實效應越大、樣本數越多，p 值就越容易小於 α。在這種情況下，<b>統計檢定力 (Power)</b> 就是 p < α 的比例，代表「當 H₁ 為真時，能正確偵測到效果 (即拒絕 H₀) 的機率」。</li>
                    </ul>
-                   <p><b>2. Bayes Factor (BF<sub>10</sub>)：</b>衡量資料支持 H₁（有差異）相對於 H₀（無差異）的強度。</p>
-                   <ul>
+                   <p><b>2. Bayes Factor (BF<sub>10</sub>)：</b>衡量資料支持 H₁（有差異）相對於 H₀（無差異）的強度。跳動的程度大於 p 值和 S 值, 但是 p 值對樣本數比較敏感: 樣本數愈大, p 值愈小。</p>
+                   <ul> 
                      <li>BF<sub>10</sub> > 3：中等證據支持 H₁ (log(BF₁₀) > log(3) ≈ 1.1)</li>
                      <li>BF<sub>10</sub> > 10：強證據支持 H₁ (log(BF₁₀) > log(10) ≈ 2.3)</li>
                      <li>BF<sub>10</sub> < 1/3：中等證據支持 H₀ (log(BF₁₀) < log(1/3) ≈ -1.1)</li>
