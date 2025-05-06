@@ -83,7 +83,74 @@ ui <- fluidPage(
                    <p><b>3. 單次試驗的解釋穩健性：</b>Bayes factor 容易受 prior 與樣本數影響，單次結果可能變動極大；相對地，S-value 或 log(S-value) 更適合做穩健初步判讀。</p>
                    <p><b>4. 推薦用途：</b>在設計試驗、評估 replication 成功率、教學解釋中，log(S-value) 可輔助或替代 BF<sub>10</sub>，尤其在資料量較少時。</p>
                    <p><b>5. 小提醒：</b>log(S-value) 非為標準 Bayesian 指標，但實務上在小樣本設計中表現穩健，值得納入比較。</p>
-                 ")) # End of HTML content
+                   <hr>
+
+                   <h4>理解區間：信賴區間 vs. 可信區間</h4>
+                   <p>信賴區間 (Confidence Intervals, CIs) 和可信區間 (Credible Intervals, CrIs) 都提供了一個未知母體參數（如平均數差異或效應量）的可能值範圍。然而，它們源於不同的統計哲學（頻率學派 vs. 貝氏學派），並且有著不同的解釋。</p>
+
+                   <p><b>1. 95% 信賴區間 (CI) - 頻率學派方法</b></p>
+                   <ul>
+                     <li><b>來源：</b>頻率學派統計學，將機率視為事件的長期頻率。母體參數被認為是固定的、未知的常數。</li>
+                     <li><b>計算：</b>僅基於觀察到的樣本資料。</li>
+                     <li><b>解釋：</b>如果我們在相同條件下重複我們的研究或抽樣過程無數次，並為每次重複計算一個 95% CI，我們預期<b>這些計算出的區間中有 95%</b> 會包含真實的、固定的母體參數。</li>
+                     <li><b>它*不*代表的意思：</b>它<b>不</b>代表您從*單一樣本*計算出的*特定* CI 有 95% 的機率包含真實參數。一旦計算出來，您的特定區間要麼包含真實值，要麼不包含；我們只是不知道是哪種情況。「95%」指的是用於生成區間的*程序*在多次假設性重複中的可靠性。</li>
+                     <li><b>類比 (套圈圈遊戲)：</b>想像真實參數是地上的一個固定樁子。每次您收集樣本並計算 CI，就像是丟出一個圈圈。CI 的計算程序被校準過，使得（在多次投擲中）95% 的圈圈會落在樁子周圍。對於您已經丟出的任何一個圈圈，它要麼套中了樁子，要麼沒有。</li>
+                   </ul>
+
+                   <p><b>2. 95% 可信區間 (CrI) - 貝氏學派方法</b></p>
+                   <ul>
+                     <li><b>來源：</b>貝氏統計學，將機率視為信念或確定性的程度。參數被視為隨機變數，我們對其不確定性會隨著數據的加入而更新。</li>
+                     <li><b>計算：</b>基於觀察到的樣本資料<b>以及</b>一個先驗機率分佈（代表在看到數據*之前*對參數的信念）。結果是參數的後驗機率分佈。</li>
+                     <li><b>解釋：</b>給定觀察到的數據和選擇的先驗，有 <b>95% 的機率真實母體參數落在此特定計算出的區間內</b>。</li>
+                     <li><b>它*確實*代表的意思：</b>它根據當前的知識狀態（先驗 + 數據）對參數的位置做出了直接的機率陳述。</li>
+                     <li><b>類比 (找鑰匙)：</b>想像您在一個房間裡弄丟了鑰匙。您的先驗信念可能是它們很可能在門附近。在搜索了某些區域（收集數據）後，您更新了您的信念。一個 95% CrI 就像在房間地圖上畫一個邊界，並說：「根據我認為它們可能在哪裡以及我已經找過的地方，我有 95% 的把握鑰匙在這個邊界內。」</li>
+                   </ul>
+
+                   <p><b>主要差異總結</b></p>
+                   <table border='1' style='border-collapse: collapse; width: 100%;'>
+                     <thead>
+                       <tr>
+                         <th style='padding: 5px; text-align: left;'>特徵</th>
+                         <th style='padding: 5px; text-align: left;'>95% 信賴區間 (CI)</th>
+                         <th style='padding: 5px; text-align: left;'>95% 可信區間 (CrI)</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       <tr>
+                         <td style='padding: 5px;'><b>哲學</b></td>
+                         <td style='padding: 5px;'>頻率學派</td>
+                         <td style='padding: 5px;'>貝氏學派</td>
+                       </tr>
+                       <tr>
+                         <td style='padding: 5px;'><b>參數</b></td>
+                         <td style='padding: 5px;'>固定的、未知的常數</td>
+                         <td style='padding: 5px;'>隨機變數（反映不確定性）</td>
+                       </tr>
+                       <tr>
+                         <td style='padding: 5px;'><b>機率</b></td>
+                         <td style='padding: 5px;'>指*方法*的長期成功率</td>
+                         <td style='padding: 5px;'>指對*此區間*的信念程度</td>
+                       </tr>
+                       <tr>
+                         <td style='padding: 5px;'><b>輸入</b></td>
+                         <td style='padding: 5px;'>僅樣本資料</td>
+                         <td style='padding: 5px;'>樣本資料 + 先驗分佈</td>
+                       </tr>
+                       <tr>
+                         <td style='padding: 5px;'><b>解釋</b></td>
+                         <td style='padding: 5px;'>「以此方式計算的區間中，有 95% 會捕捉到真實值。」</td>
+                         <td style='padding: 5px;'>「真實值落在此區間內的機率為 95%。」</td>
+                       </tr>
+                     </tbody>
+                   </table>
+
+                   <p><b>實務上：</b></p>
+                   <ul>
+                     <li>通常，對於簡單模型、大樣本和無資訊先驗，CI 和 CrI 在數值上可能很相似。然而，它們的解釋仍然有根本上的不同。</li>
+                     <li>CrI 的解釋通常更直觀，更接近研究人員*希望*能對 CI 所做的陳述。</li>
+                     <li>兩者之間的選擇取決於研究問題和哲學方法。貝氏方法（如產生 CrI 和貝氏因子，如本 App 所用）允許納入先驗知識，並對假設或參數做出直接的機率陳述。頻率學派方法（如 p 值和 CI）則關注長期錯誤率和程序的可靠性。</li>
+                   </ul>
+                   ")) # End of HTML content
       ) # End of tabsetPanel
     ) # End of mainPanel
   ) # End of sidebarLayout
@@ -127,31 +194,17 @@ server <- function(input, output, session) { # Added session argument
         }, error = function(e) NULL)
 
         if (!is.null(bf_result) && inherits(bf_result, "BFBayesFactor")) {
-           bf10 <- exp(bf_result@bayesFactor$bf)
-           # Handle potential Inf/NaN from exp()
+           # Extract BF10 value correctly
+           bf_matrix <- BayesFactor::extractBF(bf_result)
+           bf10 <- bf_matrix$bf[1] # Assuming the first BF is BF10
+           # Handle potential Inf/NaN from exp() - BF is already on natural scale from extractBF
            if (is.infinite(bf10) || is.nan(bf10)) return(NA_real_)
            return(bf10)
         }
       }
       # Fallback approximation if BayesFactor package is not available or fails
       # This approximation is likely less accurate than using the package
-      se <- sqrt(1 / n1 + 1 / n2)
-      likelihood_h1_at_effect <- dnorm(t_stat * se, mean = 0, sd = se) # Likelihood under H0 (effect=0)
-      # Average likelihood under H1 requires integration over the prior
-      # Using a simple approximation: likelihood at prior mean (0) scaled by prior density at 0
-      # This is NOT a standard or necessarily accurate way to approximate BF
-      # A better approximation might involve numerical integration or specific formulas (e.g., Wagenmakers et al., 2001 JMP)
-      # For now, retaining the simplified (potentially inaccurate) fallback:
-      prior_density_at_0 <- dnorm(0, mean = 0, sd = prior_sd) # Prior density for effect=0 under H1
-      likelihood_h0 <- dnorm(t_stat * se, mean = 0, sd = se) # Likelihood under H0 (effect=0)
-
-      # A common approximation for the Savage-Dickey density ratio: BF01 = posterior(0) / prior(0)
-      # BF10 = prior(0) / posterior(0). This still requires the posterior.
-      # Let's use a known formula approximation (Rouder et al., 2009, Psychon Bull Rev)
-      # Note: This requires the Jeffreys-Zellner-Siow prior (Cauchy prior on effect size, Jeffreys prior on variance)
-      # The 'rscale' in BayesFactor corresponds to the scale of the Cauchy prior on the standardized effect size (delta)
-      # The formula is complex. Using the package is highly recommended.
-      # Reverting to a placeholder NA if package fails, as the previous fallback was questionable.
+      # Using a placeholder NA if package fails, as approximations can be unreliable.
       # warning("BayesFactor package failed or not installed. BF10 calculation skipped.")
       return(NA_real_) # Return NA if package method fails
 
