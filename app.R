@@ -26,11 +26,9 @@ ui <- fluidPage(
       # Input for the number of simulations to run
       # *** MODIFIED: Default value changed to 2000 for the table ***
       numericInput("n_sim", "模擬次數 (表格用)", value = 2000, min = 100, step = 50), # Min set to 100 as graphs use 100
-      # Dropdown to select the style of the animation (applies to both plots)
+      # *** MODIFIED: Dropdown now only has one style ***
       selectInput("anim_style", "動畫風格",
-                  choices = c("線條動畫" = "reveal",
-                              "跳點動畫" = "states",
-                              "淡入動畫" = "time")),
+                  choices = c("線條動畫" = "reveal")), # Only line animation available
       # Button to trigger the simulation
       actionButton("go", "開始模擬")
     ),
@@ -72,19 +70,10 @@ ui <- fluidPage(
                      <li>BF<sub>10</sub> < 1/10：強證據支持 H₀ (log(BF₁₀) < log(1/10) ≈ -2.3)</li>
                      <li>1/3 < BF<sub>10</sub> < 3：證據不明確或薄弱 (-1.1 < log(BF₁₀) < 1.1)</li>
                    </ul>
-                   <p><b>3. Posterior P(H₁)：</b>後驗機率，表示給定資料後，H₁ 為真的機率（假設 H₀ 和 H₁ 的先驗機率相等，即 P(H₀)=P(H₁)=0.5）。可直接用來決策。</p>
-                   <p><b>4. S-value：</b>以資訊量觀點轉換 p 值，公式為 -log<sub>2</sub>(p)，越大代表對 H₀ 的否定越強。<b>（注意：此指標已從摘要表中移除）</b></p>
-                   <p><b>5. ROPE (Region of Practical Equivalence)：</b>在貝氏分析中，ROPE 指的是效應量小到可以被視為「實務上等同於無差異」的一個區間（例如 Cohen's d 在 -0.1 到 0.1 之間）。分析時會計算效應量後驗分佈落在 ROPE 內的機率。<b>（注意：本 App 先前的「比較圖」分頁曾計算 BF<sub>10</sub> 介於 1/3 到 3 之間的比例，這代表證據不明確的比例，概念上與 ROPE 不同，請勿混淆。）</b></p>
-                   <p><b>6. P(H₁) > 0.95：</b>這表示根據觀察到的數據和設定的先驗（Prior），計算出的「H₁ 為真」的後驗機率超過 95%。這是一個常用的決策閾值，表示有很高的信心認為 H₁ 是成立的（例如，存在真實的組間差異）。</p>
+                   <p><b>3. Posterior P(H₁) (後驗機率)：</b>給定資料和先驗假設下，H₁ 為真的機率（假設 H₀ 和 H₁ 的先驗機率相等 P(H₀)=P(H₁)=0.5）。可直接用來決策。</p>
+                   <p><b>4. ROPE (Region of Practical Equivalence)：</b>在貝氏分析中，ROPE 指的是效應量小到可以被視為「實務上等同於無差異」的一個區間（例如 Cohen's d 在 -0.1 到 0.1 之間）。分析時會計算效應量後驗分佈落在 ROPE 內的機率。<b>本 App 摘要表中的 ROPE% 指標是計算每次模擬中 Cohen's d 的 *點估計值* 落在指定區間 [-0.05, 0.05] 內的比例，此為簡化計算，與標準貝氏 ROPE 分析（基於後驗分佈）不同。</b></p>
+                   <p><b>5. P(H₁) > 0.95：</b>這表示根據觀察到的數據和設定的先驗（Prior），計算出的「H₁ 為真」的後驗機率超過 95%。這是一個常用的決策閾值，表示有很高的信心認為 H₁ 是成立的（例如，存在真實的組間差異）。</p>
                    <hr>
-                   <h4>延伸說明：log(S-value) 與 log(BF<sub>10</sub>) 的變異性比較</h4>
-                   <p><b>1. 穩定性差異：</b>log(S-value) 在多次模擬下的變異性（SD）通常小於 log(BF<sub>10</sub>)，表示它對樣本波動與 prior 選擇較不敏感。</p>
-                   <p><b>2. 實務意涵：</b>當我們希望評估研究設計或證據穩定性時，log(S-value) 的標準差可作為衡量「一致性」的參考指標。</p>
-                   <p><b>3. 單次試驗的解釋穩健性：</b>Bayes factor 容易受 prior 與樣本數影響，單次結果可能變動極大；相對地，S-value 或 log(S-value) 更適合做穩健初步判讀。</p>
-                   <p><b>4. 推薦用途：</b>在設計試驗、評估 replication 成功率、教學解釋中，log(S-value) 可輔助或替代 BF<sub>10</sub>，尤其在資料量較少時。</p>
-                   <p><b>5. 小提醒：</b>log(S-value) 非為標準 Bayesian 指標，但實務上在小樣本設計中表現穩健，值得納入比較。</p>
-                   <hr>
-
                    <h4>理解區間：信賴區間 vs. 可信區間</h4>
                    <p>信賴區間 (Confidence Intervals, CIs) 和可信區間 (Credible Intervals, CrIs) 都提供了一個未知母體參數（如平均數差異或效應量）的可能值範圍。然而，它們源於不同的統計哲學（頻率學派 vs. 貝氏學派），並且有著不同的解釋。</p>
 
@@ -243,11 +232,16 @@ server <- function(input, output, session) { # Added session argument
 
       # Handle t-test failure
       if (is.null(t_res) || !is.finite(t_res$statistic) || !is.finite(t_res$p.value)) {
-         return(data.frame(sim = i, p = NA_real_, bf10 = NA_real_, log_bf10 = NA_real_, post_p = NA_real_, s_value = NA_real_))
+         # *** MODIFIED: Added d_est = NA_real_ ***
+         return(data.frame(sim = i, p = NA_real_, bf10 = NA_real_, log_bf10 = NA_real_, post_p = NA_real_, s_value = NA_real_, d_est = NA_real_))
       }
 
       t_stat <- t_res$statistic
       p_val <- t_res$p.value
+
+      # *** ADDED: Calculate estimated Cohen's d from t-statistic ***
+      # Formula: d = t * sqrt(1/n1 + 1/n2)
+      d_est <- t_stat * sqrt(2 / input$n_per_group) # Assuming n1=n2
 
       # Compute BF10
       bf10 <- compute_bf10(t_stat, input$n_per_group, input$n_per_group, input$prior_sd)
@@ -262,7 +256,8 @@ server <- function(input, output, session) { # Added session argument
       s_val <- compute_svalue(p_val)
 
       # Return results
-      data.frame(sim = i, p = p_val, bf10 = bf10, log_bf10 = log_bf10, post_p = post_p, s_value = s_val)
+      # *** MODIFIED: Added d_est ***
+      data.frame(sim = i, p = p_val, bf10 = bf10, log_bf10 = log_bf10, post_p = post_p, s_value = s_val, d_est = d_est)
     })
     # Combine results into one data frame
     df_final <- do.call(rbind, results)
@@ -273,6 +268,8 @@ server <- function(input, output, session) { # Added session argument
     df_final$log_bf10 <- as.numeric(df_final$log_bf10)
     df_final$post_p <- as.numeric(df_final$post_p)
     df_final$s_value <- as.numeric(df_final$s_value)
+    # *** ADDED: Ensure d_est is numeric ***
+    df_final$d_est <- as.numeric(df_final$d_est)
 
     return(df_final)
   })
@@ -295,11 +292,8 @@ server <- function(input, output, session) { # Added session argument
          return(list(src = "", contentType = 'image/gif', alt = "前 100 次模擬中無有效的 p-value 資料可繪圖"))
     }
 
-    # Select animation style
-    anim_style <- switch(input$anim_style,
-                         "reveal" = transition_reveal(sim),
-                         "states" = transition_states(sim, transition_length = 2, state_length = 1),
-                         "time" = transition_time(sim))
+    # *** MODIFIED: Directly use transition_reveal as it's the only option ***
+    anim_transition <- transition_reveal(sim)
 
     # Create p-value plot
     # *** MODIFIED: Added group = 1 to aes() to fix geom_line warning ***
@@ -312,7 +306,7 @@ server <- function(input, output, session) { # Added session argument
       labs(x = "模擬次數 (前 100 次)", y = "p-value", # Modified x-axis label
            title = paste("p-value 之舞 (顯示 ", nrow(df_clean_p), "/", actual_sims_in_df, " 次有效模擬)", sep="")) + # Modified title
       scale_y_continuous(limits = c(0, 1)) + # Ensure y-axis is 0 to 1
-      anim_style +
+      anim_transition + # Use the defined transition
       theme_minimal() # showtext will handle font rendering
 
     # Save and return GIF
@@ -356,11 +350,8 @@ server <- function(input, output, session) { # Added session argument
          return(list(src = "", contentType = 'image/gif', alt = "前 100 次模擬中無有效的 log(BF10) 資料可繪圖"))
      }
 
-    # Select animation style (same as p-value plot)
-    anim_style <- switch(input$anim_style,
-                         "reveal" = transition_reveal(sim),
-                         "states" = transition_states(sim, transition_length = 2, state_length = 1),
-                         "time" = transition_time(sim))
+    # *** MODIFIED: Directly use transition_reveal as it's the only option ***
+    anim_transition <- transition_reveal(sim)
 
     # Determine y-axis limits dynamically but capped for readability (based on the 100 sims)
     y_min <- min(df_clean_logbf$log_bf10, na.rm = TRUE)
@@ -390,7 +381,7 @@ server <- function(input, output, session) { # Added session argument
       labs(x = "模擬次數 (前 100 次)", y = "log(BF₁₀)", # Modified x-axis label
            title = paste("log(BF₁₀) 之舞 (顯示 ", nrow(df_clean_logbf), "/", actual_sims_in_df, " 次有效模擬)", sep=""), # Modified title
            caption = "水平線: log(10), log(3), 0, log(1/3), log(1/10)") +
-      anim_style +
+      anim_transition + # Use the defined transition
       theme_minimal() + # showtext will handle font rendering
       theme(plot.caption = element_text(hjust = 0.5, size=9, color="gray30")) # Add caption style
 
@@ -430,7 +421,7 @@ server <- function(input, output, session) { # Added session argument
     # Determine if H0 is true (d=0) or H1 is true (d!=0)
     is_h0_true <- isTRUE(all.equal(input$d_true, 0)) # Use all.equal for float comparison
 
-    # Define column names with HTML tooltips - UPDATED for Power/Type I Error
+    # *** MODIFIED: Define column names with HTML tooltips - ADDED ROPE ***
     colnames_vec <- c(
       # Updated tooltip for p < 0.05
       if (is_h0_true) {
@@ -443,6 +434,8 @@ server <- function(input, output, session) { # Added session argument
       '<span title="BF10 > 10 表示強證據支持 H₁">BF10 > 10<br>(強支持 H₁)</span>',
       '<span title="BF10 < 1/3 表示中等證據支持 H₀">BF10 < 1/3<br>(中等支持 H₀)</span>',
       '<span title="BF10 < 1/10 表示強證據支持 H₀">BF10 < 1/10<br>(強支持 H₀)</span>',
+      # *** ADDED: ROPE Column Header ***
+      '<span title="估計效應量 d 的點估計值落在 [-0.05, 0.05] 區間內的比例">d in ROPE<br>[-0.05, 0.05]</span>',
       '<span title="Posterior P(H₁) > 0.95 表示後驗機率很高">P(H₁) > 0.95</span>'
     )
 
@@ -466,8 +459,13 @@ server <- function(input, output, session) { # Added session argument
     bf10_neg_1_3 <- calc_mean_prop(df$bf10 < 1/3)
     bf10_neg_1_10 <- calc_mean_prop(df$bf10 < 1/10)
     post_prop <- calc_mean_prop(df$post_p > 0.95)
+    # *** ADDED: Calculate ROPE proportion based on estimated d ***
+    # Calculate proportion where absolute estimated d is <= 0.05
+    rope_prop <- calc_mean_prop(abs(df$d_est) <= 0.05)
+
 
     # Create the summary data frame
+    # *** MODIFIED: Added rope = round(rope_prop, 3) ***
     summary_df <- data.frame(
       p_05 = round(p_prop_05, 3),
       p_005 = round(p_prop_005, 3),
@@ -475,6 +473,7 @@ server <- function(input, output, session) { # Added session argument
       bf10_gt10 = round(bf10_pos_10, 3),
       bf10_lt1_3 = round(bf10_neg_1_3, 3),
       bf10_lt1_10 = round(bf10_neg_1_10, 3),
+      rope = round(rope_prop, 3), # Added ROPE column
       post = round(post_prop, 3)
     )
 
