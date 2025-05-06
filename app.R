@@ -44,6 +44,26 @@ ui <- fluidPage(
         ),
         # Tab 2: Violin Plots (All simulations)
         tabPanel("分佈圖 (所有模擬)",
+                 HTML("""
+<hr>
+<div style="padding:10px; background-color:#f9f9f9; border:1px solid #ddd; border-radius:5px;">
+  <h4>Violin Plot 說明</h4>
+  <p><b>這些 Violin Plot 顯示的是每個統計指標在所有模擬中的分佈情形，並提供以下資訊：</b></p>
+  <ul>
+    <li><b>形狀（外型輪廓）：</b>代表該指標的機率密度分佈，越寬的區域表示該數值在模擬中越常出現。</li>
+    <li><b>中位數、Q1 與 Q3：</b>圖中用文字標示，分別代表第 50、25、75 百分位數，用來描述數據集中趨勢與變異。</li>
+    <li><b>Boxplot：</b>疊在 Violin Plot 中央，用白色顯示，協助快速辨認中位數與 IQR（四分位距）。</li>
+  </ul>
+  <p><b>每個指標的圖形意涵：</b></p>
+  <ul>
+    <li><b>p-value：</b>若分佈偏向 0，代表模擬中多數能偵測出顯著結果（拒絕 H₀）。若接近均勻，表示無真實效應。</li>
+    <li><b>S-value：</b>為 -log₂(p-value)，愈大代表與 H₀ 越不相容，與資訊量類似。</li>
+    <li><b>BF₁₀ 與 log(BF₁₀)：</b>評估支持 H₁ 的證據強度；BF₁₀ > 3 表示中等支持，> 10 表示強支持。</li>
+    <li><b>P(H₁)：</b>後驗機率，愈靠近 1 表示我們越有信心認為 H₁ 為真；超過 0.95 為常見判定閾值。</li>
+  </ul>
+  <p>請注意：部分圖使用對數尺度（如 BF₁₀）以處理極端值與右偏分佈。</p>
+</div>
+"""),
                  fluidRow(
                    column(6,
                           h4("p-value 分佈"),
