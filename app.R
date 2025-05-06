@@ -249,8 +249,9 @@ server <- function(input, output, session) { # Added session argument
                          "time" = transition_time(sim))
 
     # Create p-value plot
+    # *** MODIFIED: Added group = 1 to aes() to fix geom_line warning ***
     # *** MODIFIED: Update title to show actual number plotted vs. requested (100) ***
-    p_plot <- ggplot(df_clean_p, aes(x = sim, y = p)) +
+    p_plot <- ggplot(df_clean_p, aes(x = sim, y = p, group = 1)) + # Added group = 1
       geom_line(color = "steelblue") +
       geom_point(size = 2, color = "orange") +
       geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") + # Significance threshold
@@ -322,8 +323,9 @@ server <- function(input, output, session) { # Added session argument
 
 
     # Create log(BF10) plot
+    # *** MODIFIED: Added group = 1 to aes() to fix geom_line warning ***
     # *** MODIFIED: Update title and x-axis label ***
-    logbf_plot <- ggplot(df_clean_logbf, aes(x = sim, y = log_bf10)) +
+    logbf_plot <- ggplot(df_clean_logbf, aes(x = sim, y = log_bf10, group = 1)) + # Added group = 1
       geom_line(color = "darkgreen") + # Different color
       geom_point(size = 2, color = "purple") + # Different color
       geom_hline(yintercept = log(10), linetype = "dotted", color = "darkblue", alpha=0.7) + # Strong Evidence H1
