@@ -1,454 +1,386 @@
-# Load required packages
+# Load necessary libraries
 library(shiny)
 library(ggplot2)
-library(dplyr)
-library(BayesFactor)
+library(gganimate) # For creating animations
+library(dplyr)    # For data manipulation
+library(gifski)   # For rendering GIF animations
+library(DT)       # For creating interactive tables
 
-# Define User Interface (UI)
+# ==== UI Definition ====
+# Defines the user interface of the Shiny app
 ui <- fluidPage(
-    # Set page language to Traditional Chinese
-    tags$head(
-        tags$meta(charset = "UTF-8"),
-        tags$meta(name = "viewport", content = "width=device-width, initial-scale=1.0"),
-        tags$script('Shiny.addCustomMessageHandler("setLocale", function(message) {
-            try { Intl.NumberFormat("zh-TW"); }
-            catch (e) { console.error("zh-TW locale not supported"); }
-        });'),
-        tags$style(HTML("
-          .selectize-dropdown-content .option {
-            white-space: normal;
-            word-break: break-word;
-          }
-        "))
+  # Set the title of the application window/tab
+  titlePanel("p 值之舞 與 log(BF₁₀) 之舞"), # Updated title reflecting dual plots
+
+  # Define the layout: sidebar and main panel
+  sidebarLayout(
+    # Sidebar panel for user inputs
+    sidebarPanel(
+      # Input for true effect size (Cohen's d)
+      numericInput("d_true", "真實效應量 (Cohen's d)", value = 0.3, step = 0.1),
+      # Input for the prior standard deviation for Bayes Factor calculation
+      numericInput("prior_sd", "Prior SD (for BF10)", value = 0.5, step = 0.1),
+      # Input for the sample size per group
+      numericInput("n_per_group", "每組樣本數", value = 30, min = 5),
+      # Input for the number of simulations to run
+      numericInput("n_sim", "模擬次數", value = 100, min = 50, step = 50),
+      # Dropdown to select the style of the animation (applies to both plots)
+      selectInput("anim_style", "動畫風格",
+                  choices = c("線條動畫" = "reveal",
+                              "跳點動畫" = "states",
+                              "淡入動畫" = "time")),
+      # Button to trigger the simulation
+      actionButton("go", "開始模擬")
     ),
-    titlePanel("P 值與貝氏因子 BF10 的「跳舞」與序列更新 -為什麼單次試驗不可靠？"), # Updated title
 
-    sidebarLayout(
-        sidebarPanel(
-            helpText("在固定樣本數'n'下執行多次模擬，觀察P值與貝氏因子 BF10 的分佈，以及特定結果的長期頻率。此版本會將前一次模擬的後驗機率作為下一次模擬的先驗機率。https://www.esci-dances.thenewstatistics.com/"), # Updated help text
+    # Main panel for displaying outputs
+    mainPanel(
+      # Use a tabset panel to organize outputs
+      tabsetPanel(
+        # First tab: Displays the animations and summary table
+        tabPanel("動態比較圖", # Renamed tab slightly
+                 # Area for the p-value animation
+                 h4("p-value 之舞"), # Title for p-value plot
+                 imageOutput("animated_plot_p", height = "350px"), # Output for p-value plot
+                 hr(), # Separator line
+                 # Area for the log(BF10) animation
+                 h4("log(BF₁₀) 之舞"), # Title for log(BF10) plot
+                 imageOutput("animated_plot_logbf", height = "350px"), # Output for log(BF10) plot
+                 hr(), # Separator line
+                 # Output for the summary data table
+                 h4("模擬結果摘要"), # Title for summary table
+                 DTOutput("summary_table")),
+        # Second tab: Displays explanations of statistical indicators
+        tabPanel("說明與解釋", # Explanation tab
+                 HTML("
+                   <h4>統計指標解釋</h4>
+                   <p><b>1. p-value：</b>傳統統計中，p 值代表在 H₀ (虛無假設，例如兩組無差異) 成立下，觀察到目前或更極端資料的機率。常見閾值 (alpha, α) 如 0.05 或 0.005。</p>
+                   <p><b>   p-value 分佈特性：</b></p>
+                   <ul>
+                     <li><b>當 H₀ 為真時 (真實效應量 d = 0)：</b> 在多次重複實驗下，p 值的分布會是<b>均勻分佈 (Uniform Distribution)</b> 在 0 到 1 之間。這意味著，如果 H₀ 真的成立，有 α% 的實驗會錯誤地得到 p < α 的結果 (即 Type I error rate)。例如，當 α = 0.05，即使沒有真實效應，也有 5% 的機率會觀察到 p < 0.05。</li>
+                     <li><b>當 H₁ 為真時 (真實效應量 d ≠ 0)：</b> 在多次重複實驗下，p 值的分布會偏向 0。真實效應越大、樣本數越多，p 值就越容易小於 α。在這種情況下，<b>統計檢定力 (Power)</b> 就是 p < α 的比例，代表「當 H₁ 為真時，能正確偵測到效果 (即拒絕 H₀) 的機率」。</li>
+                   </ul>
+                   <p><b>2. Bayes Factor (BF<sub>10</sub>)：</b>衡量資料支持 H₁（有差異）相對於 H₀（無差異）的強度。</p>
+                   <ul>
+                     <li>BF<sub>10</sub> > 3：中等證據支持 H₁ (log(BF₁₀) > log(3) ≈ 1.1)</li>
+                     <li>BF<sub>10</sub> > 10：強證據支持 H₁ (log(BF₁₀) > log(10) ≈ 2.3)</li>
+                     <li>BF<sub>10</sub> < 1/3：中等證據支持 H₀ (log(BF₁₀) < log(1/3) ≈ -1.1)</li>
+                     <li>BF<sub>10</sub> < 1/10：強證據支持 H₀ (log(BF₁₀) < log(1/10) ≈ -2.3)</li>
+                     <li>1/3 < BF<sub>10</sub> < 3：證據不明確或薄弱 (-1.1 < log(BF₁₀) < 1.1)</li>
+                   </ul>
+                   <p><b>3. Posterior P(H₁)：</b>後驗機率，表示給定資料後，H₁ 為真的機率（假設 H₀ 和 H₁ 的先驗機率相等，即 P(H₀)=P(H₁)=0.5）。可直接用來決策。</p>
+                   <p><b>4. S-value：</b>以資訊量觀點轉換 p 值，公式為 -log<sub>2</sub>(p)，越大代表對 H₀ 的否定越強。<b>（注意：此指標已從摘要表中移除）</b></p>
+                   <p><b>5. ROPE (Region of Practical Equivalence)：</b>在貝氏分析中，ROPE 指的是效應量小到可以被視為「實務上等同於無差異」的一個區間（例如 Cohen's d 在 -0.1 到 0.1 之間）。分析時會計算效應量後驗分佈落在 ROPE 內的機率。<b>（注意：本 App 先前的「比較圖」分頁曾計算 BF<sub>10</sub> 介於 1/3 到 3 之間的比例，這代表證據不明確的比例，概念上與 ROPE 不同，請勿混淆。）</b></p>
+                   <p><b>6. P(H₁) > 0.95：</b>這表示根據觀察到的數據和設定的先驗（Prior），計算出的「H₁ 為真」的後驗機率超過 95%。這是一個常用的決策閾值，表示有很高的信心認為 H₁ 是成立的（例如，存在真實的組間差異）。</p>
+                   <hr>
+                   <h4>延伸說明：log(S-value) 與 log(BF<sub>10</sub>) 的變異性比較</h4>
+                   <p><b>1. 穩定性差異：</b>log(S-value) 在多次模擬下的變異性（SD）通常小於 log(BF<sub>10</sub>)，表示它對樣本波動與 prior 選擇較不敏感。</p>
+                   <p><b>2. 實務意涵：</b>當我們希望評估研究設計或證據穩定性時，log(S-value) 的標準差可作為衡量「一致性」的參考指標。</p>
+                   <p><b>3. 單次試驗的解釋穩健性：</b>Bayes factor 容易受 prior 與樣本數影響，單次結果可能變動極大；相對地，S-value 或 log(S-value) 更適合做穩健初步判讀。</p>
+                   <p><b>4. 推薦用途：</b>在設計試驗、評估 replication 成功率、教學解釋中，log(S-value) 可輔助或替代 BF<sub>10</sub>，尤其在資料量較少時。</p>
+                   <p><b>5. 小提醒：</b>log(S-value) 非為標準 Bayesian 指標，但實務上在小樣本設計中表現穩健，值得納入比較。</p>
+                 ")) # End of HTML content
+      ) # End of tabsetPanel
+    ) # End of mainPanel
+  ) # End of sidebarLayout
+) # End of fluidPage (UI)
 
-            # --- 可折疊的驚訝值說明 ---
-            tags$details(
-                tags$summary("顯示/隱藏：驚訝值 (S-value) 說明"),
-                tags$pre(
-"驚訝值 S 提供另一種解釋 p 值的方式，用「位元 (bits)」量化相對於某個假設（通常是 H0）的「驚訝程度」或「資訊量」。
-定義：S = -log₂(p)，其中 p 是 p 值。反過來說，p = (1/2)ˢ。
-用「位元 (bits)」量化相對於某個假設（通常是 H0）的「驚訝程度」或「資訊量」。
-定義：S = -log₂(p)，其中 p 是 p 值。反過來說，p = (1/2)ˢ。
-直觀解釋：S 值為 'x' 位元，相當於連續擲一枚公平硬幣 'x' 次，每次都出現正面（或反面）的驚訝程度。
+# ==== Server Logic ====
+# Defines the server-side logic of the Shiny app
+server <- function(input, output, session) { # Added session argument
 
-範例驚訝值：
-  S = 4 位元 (p = 1/16 = 0.0625)：連續擲 4 次硬幣皆同面的驚訝程度。
-  S = 7 位元 (p ≈ 0.008)：連續擲 7 次硬幣皆同面的驚訝程度。
-  S = 8 位元 (p ≈ 0.004)：連續擲 8 次硬幣皆同面的驚訝程度。
-  S = 10 位元 (p ≈ 0.001)：連續擲 10 次硬幣皆同面的驚訝程度。
+  # --- Simulation Data Generation ---
 
-主要特性：
-  S 值是等距變項 (Interval Variable)，例如 S=8 的資訊量確實是 S=4 的 2 倍。
-  針對同一主題之不同獨立研究的 S 值可以相加。
+  # Reactive expression to run the simulation when the 'go' button is pressed
+  simulate_data <- eventReactive(input$go, {
 
-與 p 值的對比：
-  p 值並非等距變項，例如 p=0.05 並非 p=0.01 資訊量的 5 倍。
-  p 值不能直接相加來整合證據。
+    # Helper function to compute Bayes Factor (BF10)
+    compute_bf10 <- function(t_stat, n1, n2, prior_sd) {
+       # Basic check for valid inputs
+      if (is.na(t_stat) || is.na(n1) || is.na(n2) || is.na(prior_sd) || n1 <= 0 || n2 <= 0 || prior_sd <= 0) {
+        return(NA_real_)
+      }
+      # Attempt calculation using BayesFactor package if available, otherwise use approximation
+      if (requireNamespace("BayesFactor", quietly = TRUE)) {
+        bf_result <- tryCatch({
+          BayesFactor::ttestBF(x = rnorm(n1), y = rnorm(n2, mean = t_stat * sqrt(1/n1 + 1/n2)), rscale = prior_sd) # Simulate data matching t-stat roughly
+        }, error = function(e) NULL)
 
-大約的 S 值與 p 值對照關係：
-  S 值   |  p 值
-  -------|---------
-  ≤ 1    | ≥ 0.36- 幾乎沒有提供反對 H0 的資訊
-  ≈ 2    | 0.18 - 0.35
-  ≈ 3    | 0.1 - 0.17
-  ≈ 4    | 0.05 - 0.09 (p=0.05 約為 S=4.3)
-  ≈ 7    | 0.006 - 0.01
-  ≈ 8    | 0.003 - 0.005
-  ≥ 10   | ≤ 0.001
+        if (!is.null(bf_result) && inherits(bf_result, "BFBayesFactor")) {
+           bf10 <- exp(bf_result@bayesFactor$bf)
+           # Handle potential Inf/NaN from exp()
+           if (is.infinite(bf10) || is.nan(bf10)) return(NA_real_)
+           return(bf10)
+        }
+      }
+      # Fallback approximation if BayesFactor package is not available or fails
+      se <- sqrt(1 / n1 + 1 / n2)
+      likelihood_h1_at_0 <- dnorm(0, mean = t_stat * se, sd = se)
+      prior_at_0 <- dnorm(0, mean = 0, sd = prior_sd)
+      # Avoid division by zero or near-zero
+      if (abs(likelihood_h1_at_0) < .Machine$double.eps) return(NA_real_)
+      bf10 <- prior_at_0 / likelihood_h1_at_0
+      # Prevent Inf or NaN results
+      if (is.infinite(bf10) || is.nan(bf10)) {
+          return(NA_real_) # Return NA_real_ for consistency
+      }
+      return(bf10)
+    }
 
-假設檢定：
-  S 值越高，與虛無假設 H0 的相容性越低，越能提供排除 H0 的證據。
-  無論 S 值多低（p 值多高），都無法用來「接受」或「證實」H0 為真。
-  低 S 值僅代表缺乏反對 H0 的證據，而非 H0 為真證據。"
-                )
-            ),
-            hr(),
+    # Helper function to compute posterior probability P(H1) from BF10
+    compute_post_prob <- function(bf10) {
+      if (is.na(bf10)) return(NA_real_)
+      # Assume equal prior odds P(H1)/P(H0) = 1
+      prior_odds <- 1
+      post_odds <- bf10 * prior_odds
+      # Handle case where post_odds might be Inf
+      if (is.infinite(post_odds)) return(1.0) # If BF is Inf, posterior prob is 1
+      return(post_odds / (1 + post_odds))
+    }
 
-            numericInput("n_fixed", "固定樣本數 (每組 n):", value = 50, min = 5, max = 1000, step = 1),
-            numericInput("delta", "真實效果量 (效果量 Cohen’s d: 平均值差異 Delta=平均值/標準差, 0.2 小, 0.5 中等, 0.8 大):", value = 0.2, step = 0.1),
-            numericInput("sd", "標準差 (SD):", value = 1, min = 0.1, step = 0.1),
-            numericInput("r_scale", "H1 的先驗: 科西分佈的尺度 0.707, cauchy(0, 0.707) 有 50% 在 -0.707 至 0.707, 有 95% 在 -4.659 至 4.659, 比常態分布更能容忍極端值", value = sqrt(2)/2, min = 0.1, step = 0.1),
-            numericInput("num_sims", "序列模擬步數:", value = 1000, min = 100, max = 20000, step = 100), # Changed label
-            actionButton("run_sim", "執行序列模擬", icon = icon("play")), # Changed label
-            sliderInput("prior_prob", "初始 H1 的先驗機率 (p[H1]):", min = 0.01, max = 0.99, value = 0.5, step = 0.01), # Changed label
-            hr(),
-            tags$b("目標條件 (基於所有序列步驟的頻率):"), # Updated label
-            tags$ul(
-                tags$li("P值 < 0.05, p < 0.005 的頻率"),
-                tags$li("95% 信賴區間包含真實平均值的頻率"),
-                tags$li("貝氏因子 (BF10) > 3, 10 (支持 H1 的中等, 強證據) 的頻率"),
-                tags$li("貝氏因子 (BF10) < 1/3, 1/10 (支持 H0 的中等, 強證據) 的頻率")
-            )
-        ),
+    # Helper function to compute S-value from p-value (kept for potential future use, but not displayed)
+    compute_svalue <- function(p) {
+      if (is.na(p) || p < 0 || p > 1) return(NA_real_) # Add checks for valid p-value
+      # Handle p=0 and p=1 specifically
+      if (p == 0) return(Inf)
+      if (p == 1) return(0)
+      -log2(p)
+    }
 
-        mainPanel(
-            h4("序列模擬摘要:"), # Updated title
-            verbatimTextOutput("summary_stats"),
-            hr(),
-            fluidRow(
-                column(6, plotOutput("p_value_hist")),
-                column(6, plotOutput("bf_hist"))
-            ),
-            fluidRow(
-                 column(6, plotOutput("p_value_dance")),
-                 column(6, plotOutput("bf_dance"))
-            ),
-            fluidRow(
-                 column(12, plotOutput("posterior_prob_dance")) # New plot for posterior probability
-            )
-        )
+    # Set seed for reproducibility
+    set.seed(123)
+    # Run the simulation 'n_sim' times
+    results <- lapply(1:input$n_sim, function(i) {
+      # Generate data based on d_true
+      g1 <- rnorm(input$n_per_group, mean = 0, sd = 1)
+      g2 <- rnorm(input$n_per_group, mean = input$d_true, sd = 1)
+
+      # Perform t-test
+      t_res <- tryCatch(t.test(g1, g2), error = function(e) NULL)
+
+      # Handle t-test failure
+      if (is.null(t_res) || !is.finite(t_res$statistic) || !is.finite(t_res$p.value)) {
+         return(data.frame(sim = i, p = NA_real_, bf10 = NA_real_, log_bf10 = NA_real_, post_p = NA_real_, s_value = NA_real_))
+      }
+
+      t_stat <- t_res$statistic
+      p_val <- t_res$p.value
+
+      # Compute BF10
+      bf10 <- compute_bf10(t_stat, input$n_per_group, input$n_per_group, input$prior_sd)
+
+      # Calculate log(BF10), handle non-positive or NA BF10 values
+      log_bf10 <- if (!is.na(bf10) && bf10 > 0) log(bf10) else NA_real_
+
+      # Compute Posterior Probability P(H1)
+      post_p <- compute_post_prob(bf10)
+
+      # Compute S-value
+      s_val <- compute_svalue(p_val)
+
+      # Return results
+      data.frame(sim = i, p = p_val, bf10 = bf10, log_bf10 = log_bf10, post_p = post_p, s_value = s_val)
+    })
+    # Combine results into one data frame
+    df_final <- do.call(rbind, results)
+
+    # Ensure columns that should be numeric are numeric
+    # (Should be less necessary with NA_real_ usage, but good practice)
+    df_final$p <- as.numeric(df_final$p)
+    df_final$bf10 <- as.numeric(df_final$bf10)
+    df_final$log_bf10 <- as.numeric(df_final$log_bf10)
+    df_final$post_p <- as.numeric(df_final$post_p)
+    df_final$s_value <- as.numeric(df_final$s_value)
+
+    return(df_final)
+  })
+
+  # --- Render p-value Animation ---
+  output$animated_plot_p <- renderImage({
+    df <- simulate_data()
+    if (!is.data.frame(df) || nrow(df) == 0) {
+         return(list(src = "", contentType = 'image/gif', alt = "請點擊「開始模擬」產生資料"))
+    }
+    # Clean data for p-value plot
+    df_clean_p <- df[!is.na(df$p), ]
+    if (nrow(df_clean_p) == 0) {
+         return(list(src = "", contentType = 'image/gif', alt = "無有效的 p-value 資料可繪圖"))
+    }
+
+    # Select animation style
+    anim_style <- switch(input$anim_style,
+                         "reveal" = transition_reveal(sim),
+                         "states" = transition_states(sim, transition_length = 2, state_length = 1),
+                         "time" = transition_time(sim))
+
+    # Create p-value plot
+    p_plot <- ggplot(df_clean_p, aes(x = sim, y = p)) +
+      geom_line(color = "steelblue") +
+      geom_point(size = 2, color = "orange") +
+      geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") + # Significance threshold
+      geom_hline(yintercept = 0.005, linetype = "dotted", color = "darkred") + # Add 0.005 threshold
+      labs(x = "模擬次數", y = "p-value",
+           title = paste("p-value 之舞 (", nrow(df_clean_p), "/", input$n_sim, " 次有效模擬)", sep="")) +
+      scale_y_continuous(limits = c(0, 1)) + # Ensure y-axis is 0 to 1
+      anim_style +
+      theme_minimal()
+
+    # Save and return GIF
+    anim_file_p <- tempfile(fileext = ".gif")
+    anim_result_p <- tryCatch({
+        if (!requireNamespace("gifski", quietly = TRUE)) stop("gifski package needed.")
+        anim_save(anim_file_p, animate(p_plot, fps = 15, width = 600, height = 350, renderer = gifski_renderer()))
+        list(src = anim_file_p, contentType = 'image/gif')
+    }, error = function(e) {
+        # Provide more informative error message
+        msg <- paste("p-value 動畫渲染失敗:", e$message)
+        if (!requireNamespace("gifski", quietly = TRUE)) {
+            msg <- paste(msg, "請安裝 'gifski' 套件。")
+        }
+        list(src = "", contentType = 'image/gif', alt = msg)
+    })
+    return(anim_result_p)
+  }, deleteFile = TRUE)
+
+  # --- Render log(BF10) Animation ---
+  output$animated_plot_logbf <- renderImage({
+    df <- simulate_data()
+     if (!is.data.frame(df) || nrow(df) == 0) {
+         return(list(src = "", contentType = 'image/gif', alt = "請點擊「開始模擬」產生資料"))
+    }
+    # Clean data for log(BF10) plot (remove NA and non-finite values)
+    df_clean_logbf <- df[!is.na(df$log_bf10) & is.finite(df$log_bf10), ]
+     if (nrow(df_clean_logbf) == 0) {
+         return(list(src = "", contentType = 'image/gif', alt = "無有效的 log(BF10) 資料可繪圖"))
+     }
+
+    # Select animation style (same as p-value plot)
+    anim_style <- switch(input$anim_style,
+                         "reveal" = transition_reveal(sim),
+                         "states" = transition_states(sim, transition_length = 2, state_length = 1),
+                         "time" = transition_time(sim))
+
+    # Determine y-axis limits dynamically but capped for readability
+    y_min <- min(df_clean_logbf$log_bf10, na.rm = TRUE)
+    y_max <- max(df_clean_logbf$log_bf10, na.rm = TRUE)
+    # Cap the limits to avoid extreme scales if there are outliers
+    y_lim_lower <- max(y_min, log(1/1000)) # Cap at BF=1/1000
+    y_lim_upper <- min(y_max, log(1000))  # Cap at BF=1000
+    # Ensure lower limit is less than upper limit
+    if(y_lim_lower >= y_lim_upper) {
+        y_lim_lower <- log(1/100)
+        y_lim_upper <- log(100)
+    }
+
+
+    # Create log(BF10) plot
+    logbf_plot <- ggplot(df_clean_logbf, aes(x = sim, y = log_bf10)) +
+      geom_line(color = "darkgreen") + # Different color
+      geom_point(size = 2, color = "purple") + # Different color
+      geom_hline(yintercept = log(10), linetype = "dotted", color = "darkblue", alpha=0.7) + # Strong Evidence H1
+      geom_hline(yintercept = log(3), linetype = "dashed", color = "blue", alpha=0.7) +  # Moderate Evidence H1
+      geom_hline(yintercept = 0, linetype = "solid", color = "grey50", alpha=0.5) + # BF = 1 line
+      geom_hline(yintercept = log(1/3), linetype = "dashed", color = "red", alpha=0.7) + # Moderate Evidence H0
+      geom_hline(yintercept = log(1/10), linetype = "dotted", color = "darkred", alpha=0.7) + # Strong Evidence H0
+      scale_y_continuous(limits = c(y_lim_lower, y_lim_upper)) + # Apply dynamic limits
+      labs(x = "模擬次數", y = "log(BF₁₀)",
+           title = paste("log(BF₁₀) 之舞 (", nrow(df_clean_logbf), "/", input$n_sim, " 次有效模擬)", sep=""),
+           caption = "水平線: log(10), log(3), 0, log(1/3), log(1/10)") +
+      anim_style +
+      theme_minimal() +
+      theme(plot.caption = element_text(hjust = 0.5, size=9, color="gray30")) # Add caption style
+
+
+    # Save and return GIF
+    anim_file_logbf <- tempfile(fileext = ".gif")
+    anim_result_logbf <- tryCatch({
+        if (!requireNamespace("gifski", quietly = TRUE)) stop("gifski package needed.")
+        anim_save(anim_file_logbf, animate(logbf_plot, fps = 15, width = 600, height = 350, renderer = gifski_renderer()))
+        list(src = anim_file_logbf, contentType = 'image/gif')
+    }, error = function(e) {
+        # Provide more informative error message
+        msg <- paste("log(BF10) 動畫渲染失敗:", e$message)
+        if (!requireNamespace("gifski", quietly = TRUE)) {
+            msg <- paste(msg, "請安裝 'gifski' 套件。")
+        }
+        list(src = "", contentType = 'image/gif', alt = msg)
+    })
+    return(anim_result_logbf)
+  }, deleteFile = TRUE)
+
+  # --- Render Summary Table ---
+  output$summary_table <- renderDT({
+    df <- simulate_data()
+    # Ensure df is a data frame before proceeding
+    if (!is.data.frame(df) || nrow(df) == 0) {
+        return(datatable(data.frame(Message = "請點擊「開始模擬」產生資料"), options = list(dom = 't', searching = FALSE, info = FALSE), rownames = FALSE))
+    }
+
+    # Determine if H0 is true (d=0) or H1 is true (d!=0)
+    is_h0_true <- isTRUE(all.equal(input$d_true, 0)) # Use all.equal for float comparison
+
+    # Define column names with HTML tooltips - UPDATED for Power/Type I Error
+    colnames_vec <- c(
+      # Updated tooltip for p < 0.05
+      if (is_h0_true) {
+        '<span title="當真實效應 d=0 時，此為 Type I error rate (偽陽性率)">p < 0.05<br>(Type I Error)</span>'
+      } else {
+        '<span title="當真實效應 d≠0 時，此為統計檢定力 (Power)">p < 0.05<br>(Power)</span>'
+      },
+      '<span title="p-value < 0.005 表示更嚴格的顯著性">p < 0.005</span>',
+      '<span title="BF10 > 3 表示中等證據支持 H₁">BF10 > 3<br>(中等支持 H₁)</span>',
+      '<span title="BF10 > 10 表示強證據支持 H₁">BF10 > 10<br>(強支持 H₁)</span>',
+      '<span title="BF10 < 1/3 表示中等證據支持 H₀">BF10 < 1/3<br>(中等支持 H₀)</span>',
+      '<span title="BF10 < 1/10 表示強證據支持 H₀">BF10 < 1/10<br>(強支持 H₀)</span>',
+      '<span title="Posterior P(H₁) > 0.95 表示後驗機率很高">P(H₁) > 0.95</span>'
     )
-)
 
-# Define Server Logic
-server <- function(input, output, session) {
+    # --- Robust calculation of summary statistics ---
+    # Helper function to safely calculate mean proportion
+    calc_mean_prop <- function(condition_vector) {
+      # Ensure input is logical or can be coerced safely
+      logical_vector <- tryCatch(as.logical(condition_vector),
+                                 warning = function(w) rep(NA, length(condition_vector)),
+                                 error = function(e) rep(NA, length(condition_vector)))
+      # Handle cases where all results are NA after coercion
+      if (all(is.na(logical_vector))) return(NA_real_)
+      mean(logical_vector, na.rm = TRUE)
+    }
 
-    session$onFlushed(function() {
-        session$sendCustomMessage("setLocale", list())
-    }, once = TRUE)
+    # Calculate proportions safely
+    p_prop_05 <- calc_mean_prop(df$p < 0.05)
+    p_prop_005 <- calc_mean_prop(df$p < 0.005)
+    bf10_pos_3 <- calc_mean_prop(df$bf10 > 3)
+    bf10_pos_10 <- calc_mean_prop(df$bf10 > 10)
+    bf10_neg_1_3 <- calc_mean_prop(df$bf10 < 1/3)
+    bf10_neg_1_10 <- calc_mean_prop(df$bf10 < 1/10)
+    post_prop <- calc_mean_prop(df$post_p > 0.95)
 
-    simulation_results <- eventReactive(input$run_sim, {
-        n_sims <- input$num_sims
+    # Create the summary data frame
+    summary_df <- data.frame(
+      p_05 = round(p_prop_05, 3),
+      p_005 = round(p_prop_005, 3),
+      bf10_gt3 = round(bf10_pos_3, 3),
+      bf10_gt10 = round(bf10_pos_10, 3),
+      bf10_lt1_3 = round(bf10_neg_1_3, 3),
+      bf10_lt1_10 = round(bf10_neg_1_10, 3),
+      post = round(post_prop, 3)
+    )
 
-        withProgress(message = '執行序列模擬中...', value = 0, { # Updated message
+    # Create the DataTable
+    datatable(summary_df,
+              colnames = lapply(colnames_vec, HTML), # Use the updated vector
+              escape = FALSE, # Allow HTML in headers
+              options = list(dom = 't', # Show only table ('t')
+                             paging = FALSE,
+                             searching = FALSE,
+                             info = FALSE,
+                             ordering = FALSE), # Disable column sorting
+              rownames = FALSE,
+              class = 'cell-border stripe') # Add some basic styling
+  })
 
-            n <- input$n_fixed
-            delta <- input$delta
-            sd <- input$sd
-            r_scale <- input$r_scale
-            theoretical_se <- sd * sqrt(2 / n)
+} # End of server function
 
-            # Initialize lists to store results for each step in the sequence
-            p_values <- list()
-            log10_bfs <- list()
-            ci_covers_delta <- list()
-            posterior_probs_h1 <- list() # Store posterior probability after each step
-
-            # Initialize the prior probability for the first simulation
-            current_prior_prob_h1 <- input$prior_prob
-
-            for (i in 1:n_sims) {
-                if (i %% 100 == 0) {
-                    incProgress(100/n_sims, detail = paste("模擬步驟", i)) # Updated message
-                 }
-
-                # Generate data for one study (one step in the sequence)
-                group1 <- rnorm(n, mean = 0, sd = sd)
-                group2 <- rnorm(n, mean = delta, sd = sd)
-
-                # Calculate t-test and p-value
-                t_test_result <- tryCatch({
-                     t.test(group2, group1, var.equal = TRUE, conf.level = 0.95)
-                 }, error = function(e) NULL)
-
-                # Calculate BF10 using the fixed rscale
-                log10_bf <- tryCatch({
-                    bf_result <- BayesFactor::ttestBF(x = group2, y = group1, rscale = r_scale, paired=FALSE)
-                    log10(exp(bf_result@bayesFactor$bf))
-                }, error = function(e) NA)
-
-                # Store results and perform sequential update if calculation was successful
-                if (!is.null(t_test_result) && !is.na(log10_bf) && is.finite(log10_bf)) {
-                    p_values[[i]] <- t_test_result$p.value
-                    log10_bfs[[i]] <- log10_bf
-                    conf_int <- t_test_result$conf.int
-                    ci_covers_delta[[i]] <- (conf_int[1] <= delta && conf_int[2] >= delta)
-
-                    # Calculate posterior probability using current prior and BF10
-                    current_bf10 <- exp(log(10) * log10_bf) # Convert log10(BF10) back to BF10
-                    # Ensure prior is not 0 or 1 to avoid division by zero or log(0)
-                    current_prior_prob_h1_clamped <- max(1e-9, min(1 - 1e-9, current_prior_prob_h1))
-                    current_prior_odds <- current_prior_prob_h1_clamped / (1 - current_prior_prob_h1_clamped)
-
-                    current_posterior_odds <- current_prior_odds * current_bf10
-                    current_posterior_prob_h1 <- current_posterior_odds / (1 + current_posterior_odds)
-
-                    # Store the calculated posterior probability for this step
-                    posterior_probs_h1[[i]] <- current_posterior_prob_h1
-
-                    # Update the prior probability for the next simulation step
-                    current_prior_prob_h1 <- current_posterior_prob_h1
-
-                } else {
-                    # Handle failed simulation step
-                    p_values[[i]] <- NA
-                    log10_bfs[[i]] <- NA
-                    ci_covers_delta[[i]] <- NA
-                    # If calculation failed, use the posterior from the previous successful step as the prior for the next step.
-                    # The value in posterior_probs_h1[[i]] will be NA, but current_prior_prob_h1 is not updated.
-                    posterior_probs_h1[[i]] <- NA # Store NA for posterior if calculation failed
-                }
-            }
-
-            # Convert lists to vectors for easier processing, removing NAs for summary stats
-            # Keep NAs in vectors for dance plots to show gaps if steps failed
-            p_values_vec <- unlist(p_values)
-            log10_bfs_vec <- unlist(log10_bfs)
-            ci_covers_delta_vec <- unlist(ci_covers_delta)
-            posterior_probs_h1_vec <- unlist(posterior_probs_h1)
-
-            # Filter out NAs for summary statistics calculations
-            valid_indices_for_summary <- !is.na(p_values_vec) & !is.na(log10_bfs_vec) & !is.na(ci_covers_delta_vec) & !is.na(posterior_probs_h1_vec)
-
-            p_values_summary <- p_values_vec[valid_indices_for_summary]
-            log10_bfs_summary <- log10_bfs_vec[valid_indices_for_summary]
-            ci_covers_delta_summary <- ci_covers_delta_vec[valid_indices_for_summary]
-            posterior_probs_h1_summary <- posterior_probs_h1_vec[valid_indices_for_summary]
-
-
-            actual_sim_steps_completed <- length(p_values_summary)
-
-            if (actual_sim_steps_completed == 0) {
-              return(list(error = "所有序列模擬步驟均失敗。請檢查參數（例如，n >= 2）。"))
-            }
-
-            # Calculate summary statistics based on completed steps
-            percent_p_less_05 <- mean(p_values_summary < 0.05) * 100
-            percent_p_less_005 <- mean(p_values_summary < 0.005) * 100
-            percent_ci_covers <- mean(ci_covers_delta_summary) * 100
-            percent_bf_greater_3 <- mean(log10_bfs_summary > log10(3)) * 100
-            percent_bf_greater_10 <- mean(log10_bfs_summary > 1) * 100
-            percent_bf_less_1over3 <- mean(log10_bfs_summary < log10(1/3)) * 100
-            percent_bf_less_1over10 <- mean(log10_bfs_summary < log10(1/10)) * 100
-
-            # Calculate number of points outside BF plot range based on summary data
-            bf_boundaries_vals <- c(log10(10), log10(3), 0, log10(1/3), log10(1/10))
-            plot_min_calc <- min(c(log10_bfs_summary, bf_boundaries_vals), na.rm = TRUE) - 0.5
-            plot_max_calc <- max(c(log10_bfs_summary, bf_boundaries_vals), na.rm = TRUE) + 0.5
-            num_outside_bf_range <- sum(log10_bfs_summary < plot_min_calc | log10_bfs_summary > plot_max_calc, na.rm = TRUE)
-
-            # --- Calculate steps to reach posterior probability thresholds ---
-            steps_to_05 <- NA
-            steps_to_95 <- NA
-
-            # Find the first step where posterior prob is <= 0.05
-            idx_le_05 <- which(posterior_probs_h1_vec <= 0.05)
-            if (length(idx_le_05) > 0) {
-                steps_to_05 <- min(idx_le_05)
-            }
-
-            # Find the first step where posterior prob is >= 0.95
-            idx_ge_95 <- which(posterior_probs_h1_vec >= 0.95)
-            if (length(idx_ge_95) > 0) {
-                steps_to_95 <- min(idx_ge_95)
-            }
-            # --- End of threshold calculation ---
-
-
-            # Get the final posterior probability after the last successful step
-            # Need to find the last non-NA value in the original vector
-            last_valid_posterior <- tail(posterior_probs_h1_vec[!is.na(posterior_probs_h1_vec)], 1)
-            final_posterior_prob_h1 <- if (length(last_valid_posterior) > 0) last_valid_posterior else NA
-
-
-            list(
-                p_values = p_values_vec, # Original vector with NAs for dance plot
-                log10_bfs = log10_bfs_vec, # Original vector with NAs for dance plot
-                ci_covers_delta = ci_covers_delta_vec, # Original vector with NAs
-                posterior_probs_h1 = posterior_probs_h1_vec, # Original vector with NAs for dance plot
-
-                percent_p_less_05 = percent_p_less_05,
-                percent_p_less_005 = percent_p_less_005,
-                percent_ci_covers = percent_ci_covers,
-                percent_bf_greater_3 = percent_bf_greater_3,
-                percent_bf_greater_10 = percent_bf_greater_10,
-                percent_bf_less_1over3 = percent_bf_less_1over3,
-                percent_bf_less_1over10 = percent_bf_less_1over10,
-
-                n = n,
-                delta = delta,
-                sd = sd,
-                theoretical_se = theoretical_se,
-                r_scale = r_scale, # Include r_scale in results
-                initial_prior_prob = input$prior_prob, # Include initial prior
-                final_posterior_prob_h1 = final_posterior_prob_h1, # Include final posterior
-
-                num_sims_requested = n_sims,
-                num_sims_completed = actual_sim_steps_completed, # Completed steps used for summary
-                failed_sims = n_sims - actual_sim_steps_completed, # Failed steps
-                num_outside_bf_range = num_outside_bf_range,
-
-                # --- Add steps to reach thresholds ---
-                steps_to_05 = steps_to_05,
-                steps_to_95 = steps_to_95
-                # --- End of added results ---
-            )
-        })
-    })
-
-    output$summary_stats <- renderPrint({
-        results <- simulation_results()
-
-        if (!is.null(results$error)) {
-          cat("錯誤:", results$error, "\n")
-          return()
-        }
-
-        cat("貝氏定理：H1 的後驗機率 p(H1|D)= p(H1) x p(D|H1)/p(D)\n")
-        cat("=先驗機率 x 似然率/邊際似然率\n")
-        cat("H1 的後驗勝算= H1 的先驗勝算 x 貝氏因子 BF10\n")
-        cat("勝算= 機率/(1-機率)，機率= 勝算/(勝算+1)\n")
-
-        # Display the initial and final posterior probabilities from the simulation sequence
-        cat(sprintf("\n--- 序列更新結果 ---\n"))
-        cat(sprintf("初始 H1 的先驗機率: %.4f\n", results$initial_prior_prob))
-        # Find the last non-NA posterior probability
-        if (!is.na(results$final_posterior_prob_h1)) {
-             cat(sprintf("經過 %d 個模擬步驟後，H1 的最終後驗機率: %.4f\n", results$num_sims_requested, results$final_posterior_prob_h1))
-        } else {
-             cat(sprintf("經過 %d 個模擬步驟後，無法計算最終後驗機率 (所有步驟均失敗)。\n", results$num_sims_requested))
-        }
-
-        # --- Display steps to reach thresholds ---
-        cat(sprintf("\n--- 達到後驗機率閾值的步驟數 ---\n"))
-        if (!is.na(results$steps_to_05)) {
-            cat(sprintf("達到 H1 後驗機率 <= 0.05 所需的最小步驟數: %d\n", results$steps_to_05))
-        } else {
-            cat(sprintf("在 %d 個模擬步驟內未達到 H1 後驗機率 <= 0.05。\n", results$num_sims_requested))
-        }
-
-        if (!is.na(results$steps_to_95)) {
-            cat(sprintf("達到 H1 後驗機率 >= 0.95 所需的最小步驟數: %d\n", results$steps_to_95))
-        } else {
-            cat(sprintf("在 %d 個模擬步驟內未達到 H1 後驗機率 >= 0.95。\n", results$num_sims_requested))
-        }
-        # --- End of displaying thresholds ---
-
-
-        cat("\n--- 序列模擬參數 ---\n") # Updated title
-        cat("固定樣本數 (每組):", results$n, "\n")
-        cat("真實平均值差異 (Delta):", results$delta, "\n")
-        cat("標準差 (SD):", results$sd, "\n")
-        cat("H1 的先驗 (rscale):", results$r_scale, "\n") # Display r_scale
-        cat("理論標準誤 (SE):", sprintf("%.4f", results$theoretical_se), "\n")
-        cat("要求序列模擬步數:", results$num_sims_requested, "\n")
-        cat("完成序列模擬步數 (用於摘要統計):", results$num_sims_completed, "\n") # Updated label
-        if(results$failed_sims > 0) {
-            cat("失敗序列模擬步數:", results$failed_sims, "\n") # Updated label
-        }
-        cat("\n--- 序列結果 (基於完成的步驟) ---\n") # Updated title
-        cat(sprintf("P值 < 0.05 的模擬百分比: %.2f%%\n", results$percent_p_less_05))
-        cat(sprintf("P值 < 0.005 的模擬百分比: %.2f%%\n", results$percent_p_less_005))
-
-        cat(sprintf("95%% CI 包含真實 Delta 的模擬百分比: %.2f%%\n", results$percent_ci_covers))
-        cat(" (注意: 這是序列模擬中單一步驟 CI 包含真值的頻率)\n") # Updated note
-        cat(sprintf("BF10 > 3 (中等證據) 的模擬百分比: %.2f%%\n", results$percent_bf_greater_3))
-        cat(sprintf("BF10 > 10 (強證據) 的模擬百分比: %.2f%%\n", results$percent_bf_greater_10))
-        cat(sprintf("BF10 < 1/3 (中等支持 H0) 的模擬百分比: %.2f%%\n", results$percent_bf_less_1over3))
-        cat(sprintf("BF10 < 1/10 (強支持 H0) 的模擬百分比: %.2f%%\n", results$percent_bf_less_1over10))
-
-        if (results$num_outside_bf_range > 0) {
-           cat(sprintf("\n注意：有 %d 個模擬步驟的 Log10(BF10) 值超出圖表範圍，未顯示在貝氏因子分佈圖中。\n", results$num_outside_bf_range))
-        }
-
-    }) # Closing renderPrint
-
-    output$p_value_hist <- renderPlot({
-        results <- simulation_results()
-        # Use filtered data for histograms
-        p_values_summary <- results$p_values[!is.na(results$p_values)]
-        req(p_values_summary)
-        df <- data.frame(p_value = p_values_summary)
-        ggplot(df, aes(x = p_value)) +
-            geom_histogram(aes(y = after_stat(density)), binwidth = 0.02, boundary = 0, fill = "lightblue", color = "black") +
-            geom_density(color = "blue", alpha = 0.5) +
-            geom_vline(xintercept = 0.05, linetype = "dashed", color = "red") +
-            scale_x_continuous(breaks = seq(0, 1, 0.1)) +
-            labs(
-                title = "P值分佈 (序列步驟)", # Updated title
-                subtitle = paste(results$num_sims_completed, "個完成步驟 (n =", results$n, ", Delta =", results$delta, ")"), # Updated subtitle
-                x = "P值",
-                y = "密度"
-            ) +
-            theme_minimal(base_family = "sans") +
-            annotate("text", x = 0.06, y = Inf, label = "p = 0.05", color = "red", hjust = 0, vjust = 1.5, family="sans")
-    })
-
-    output$bf_hist <- renderPlot({
-        results <- simulation_results()
-        # Use filtered data for histograms
-        log10_bfs_summary <- results$log10_bfs[!is.na(results$log10_bfs)]
-        req(log10_bfs_summary)
-        df <- data.frame(log10_bf10 = log10_bfs_summary)
-        bf_boundaries <- data.frame(
-            log10_val = c(log10(10), log10(3), 0, log10(1/3), log10(1/10)),
-            label = c("強 H1", "中等 H1", "軼事", "中等 H0", "強 H0")
-        )
-        target_bf3_log10 <- log10(3)
-        target_bf10_log10 <- log10(10)
-
-        # Calculate plot limits based on summary data
-        bf_boundaries_vals <- bf_boundaries$log10_val
-        plot_min <- min(c(df$log10_bf10, bf_boundaries_vals), na.rm = TRUE) - 0.5
-        plot_max <- max(c(df$log10_bf10, bf_boundaries_vals), na.rm = TRUE) + 0.5
-
-        ggplot(df, aes(x = log10_bf10)) +
-            geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "lightgreen", color = "black") +
-             geom_density(color = "darkgreen", alpha = 0.5) +
-            geom_vline(data=bf_boundaries, aes(xintercept = log10_val), linetype = "dotted", color = "grey40") +
-            geom_vline(xintercept = target_bf3_log10, linetype = "dashed", color = "darkorange", size=0.8) +
-            geom_vline(xintercept = target_bf10_log10, linetype = "dashed", color = "darkred", size=1) +
-            coord_cartesian(xlim = c(plot_min, plot_max)) +
-            labs(
-                title = "Log10(貝氏因子)分佈 (序列步驟)", # Updated title
-                subtitle = paste(results$num_sims_completed, "個完成步驟 (n =", results$n, ", Delta =", results$delta, ", H1 vs H0)"), # Updated subtitle
-                x = "Log10(BF10)",
-                y = "密度"
-            ) +
-            theme_minimal(base_family = "sans") +
-            geom_text(data=bf_boundaries, aes(x = log10_val, y = -Inf, label=label), vjust=-0.5, size=3, angle=90, hjust=0, color="grey40", family="sans") +
-            annotate("text", x = target_bf3_log10 + 0.05, y = Inf, label = "BF=3", color = "darkorange", hjust = 0, vjust = 1.5, family="sans") +
-             annotate("text", x = target_bf10_log10 + 0.05, y = Inf, label = "BF=10", color = "darkred", hjust = 0, vjust = 1.5, family="sans")
-    })
-
-    output$p_value_dance <- renderPlot({
-        results <- simulation_results()
-        # Use original vector with NAs for dance plot
-        df <- data.frame(sim = 1:results$num_sims_requested, p = results$p_values)
-        ggplot(df, aes(x = sim, y = p)) +
-            geom_line(color = "steelblue") +
-            geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") +
-            labs(title = "P 值之舞 (序列步驟)", x = "序列步驟", y = "P 值") + # Updated labels
-            theme_minimal()
-    })
-
-    output$bf_dance <- renderPlot({
-        results <- simulation_results()
-        # Use original vector with NAs for dance plot
-        df <- data.frame(sim = 1:results$num_sims_requested, log10bf = results$log10_bfs)
-        ggplot(df, aes(x = sim, y = log10bf)) +
-            geom_line(color = "darkgreen") +
-            geom_hline(yintercept = log10(3), linetype = "dashed", color = "orange") +
-            geom_hline(yintercept = log10(10), linetype = "dashed", color = "red") +
-            labs(title = "BF10 之舞 (log10) (序列步驟)", x = "序列步驟", y = "log10(BF10)") + # Updated labels
-            theme_minimal()
-    })
-
-    # New plot for Posterior Probability of H1 over the sequence
-    output$posterior_prob_dance <- renderPlot({
-        results <- simulation_results()
-        # Use original vector with NAs for dance plot
-        df <- data.frame(sim = 1:results$num_sims_requested, posterior_prob = results$posterior_probs_h1)
-        ggplot(df, aes(x = sim, y = posterior_prob)) +
-            geom_line(color = "purple") +
-            geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey") + # Add a line at 0.5 for reference
-             geom_hline(yintercept = 0.05, linetype = "dotted", color = "red") + # Add line for 0.05 threshold
-             geom_hline(yintercept = 0.95, linetype = "dotted", color = "blue") + # Add line for 0.95 threshold
-            labs(
-                title = "H1 後驗機率之舞 (序列更新)", # Title for the new plot
-                x = "序列步驟", # X-axis label
-                y = "H1 後驗機率" # Y-axis label
-            ) +
-            theme_minimal() +
-            scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) # Ensure y-axis is 0 to 1
-    })
-
-} # Closing server function
-
+# ==== Run the Application ====
 shinyApp(ui = ui, server = server)
