@@ -405,75 +405,79 @@ server <- function(input, output, session) {
   # --- Render Violin Plots (Using FULL dataset) ---
 
   # Helper function for creating violin plots with Q1, Median, Q3 in subtitle
-  create_violin_plot <- function(data, var, title, y_label, y_limits = NULL, hlines = NULL, hline_labels = NULL, use_log_scale = FALSE) {
-    # Filter out NA and non-finite values for the specific variable
-    df_clean <- data[!is.na(data[[var]]) & is.finite(data[[var]]), ]
+  
+create_violin_plot <- function(data, var, title, y_label, y_limits = NULL,
+                               hlines = NULL, hline_labels = NULL, use_log_scale = FALSE) {
+  df_clean <- data[!is.na(data[[var]]) & is.finite(data[[var]]), ]
 
-    if (nrow(df_clean) == 0) {
-      return(ggplot() + labs(title = title, subtitle = "無有效資料可繪圖") + theme_void())
-    }
-
-    # Calculate Q1, Median, Q3
-    quantiles_data <- quantile(df_clean[[var]], probs = c(0.25, 0.5, 0.75), na.rm = TRUE, type = 7) # type=7 is R default
-    q1_val <- round(quantiles_data[1], 3)
-    median_val <- round(quantiles_data[2], 3)
-    q3_val <- round(quantiles_data[3] , 3)
-    
-    # Create subtitle string, handle NAs from quantiles if df_clean is too small or all same value
-    plot_subtitle <- "Q1, Median, Q3: N/A"
-    if(all(!is.na(c(q1_val, median_val, q3_val)))){
-        plot_subtitle <- paste0("Q1: ", q1_val, " | Median: ", median_val, " | Q3: ", q3_val)
-    }
-
-
-    # Base plot
-    p <- ggplot(df_clean, aes(x = "", y = .data[[var]])) +
-      geom_violin(trim = TRUE, fill = "lightblue", alpha = 0.7) +
-      # geom_boxplot width reduced, outlier.shape=NA to hide outliers (violin shows density)
-      geom_boxplot(width = 0.08, fill = "white", alpha = 0.5, outlier.shape = NA) +
-      labs(title = title, x = "", y = y_label, subtitle = plot_subtitle) + # Added subtitle
-      theme_minimal() +
-      theme(axis.text.x = element_blank(), # Hide x-axis text ("")
-            axis.ticks.x = element_blank(), # Hide x-axis ticks
-            plot.subtitle = element_text(hjust = 0.5, size = 9, color = "gray20")) # Style subtitle
-
-    # Add horizontal lines if provided
-    if (!is.null(hlines)) {
-      p <- p + geom_hline(yintercept = hlines, linetype = "dashed", color = "grey50")
-      # Add labels for horizontal lines if provided
-      if (!is.null(hline_labels) && length(hline_labels) == length(hlines)) {
-         # Create annotation data frame
-         hline_data <- data.frame(yintercept = hlines, label = hline_labels)
-         # Add text annotations slightly offset. Adjust x position if needed.
-         p <- p + geom_text(data = hline_data, aes(x = 0.55, y = yintercept, label = label),
-                            hjust = 0, vjust = -0.5, size = 3, color = "grey30", inherit.aes = FALSE)
-      }
-    }
-
-    # Apply y-axis limits if provided
-    if (!is.null(y_limits)) {
-        if (use_log_scale) {
-            safe_limits <- pmax(y_limits, .Machine$double.eps)
-             p <- p + scale_y_log10(limits = safe_limits, labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-                      annotation_logticks(sides = "l")
-        } else {
-            p <- p + scale_y_continuous(limits = y_limits)
-        }
-    } else if (use_log_scale) {
-        # Apply log scale without specific limits, ensuring positive range for auto-scaling
-        min_val_for_log <- min(df_clean[[var]][df_clean[[var]] > 0], na.rm = TRUE)
-        max_val_for_log <- max(df_clean[[var]], na.rm = TRUE)
-        if (is.finite(min_val_for_log) && is.finite(max_val_for_log) && min_val_for_log > 0) {
-           p <- p + scale_y_log10(labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-                    annotation_logticks(sides = "l")
-        } else {
-           p <- p + labs(caption = paste(y_label, "無法使用對數尺度 (無正值或範圍問題)")) # Add caption instead of subtitle
-        }
-    }
-    return(p)
+  if (nrow(df_clean) == 0) {
+    return(ggplot() + labs(title = title, subtitle = "無有效資料可繪圖") + theme_void())
   }
 
-  # p-value violin plot
+  # 計算 Q1, Median, Q3
+  quantiles_data <- quantile(df_clean[[var]], probs = c(0.25, 0.5, 0.75), na.rm = TRUE, type = 7)
+  q1_val <- round(quantiles_data[1], 3)
+  median_val <- round(quantiles_data[2], 3)
+  q3_val <- round(quantiles_data[3], 3)
+
+  # 建立標籤資料框
+  label_df <- data.frame(
+    label = c(paste0("Q1 = ", q1_val),
+              paste0("Median = ", median_val),
+              paste0("Q3 = ", q3_val)),
+    y = c(q1_val, median_val, q3_val),
+    x = 1
+  )
+
+  # 建立圖形
+  p <- ggplot(df_clean, aes(x = "", y = .data[[var]])) +
+    geom_violin(trim = TRUE, fill = "lightblue", alpha = 0.7) +
+    geom_boxplot(width = 0.08, fill = "white", alpha = 0.5, outlier.shape = NA) +
+    geom_text(data = label_df, aes(x = x, y = y, label = label),
+              inherit.aes = FALSE, vjust = -0.5, size = 5, color = "black", fontface = "bold") +
+    labs(title = title, x = "", y = y_label) +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          plot.title = element_text(size = 14, face = "bold"),
+          axis.title.y = element_text(size = 12))
+
+  # 加上水平線與標籤（若有）
+  if (!is.null(hlines)) {
+    p <- p + geom_hline(yintercept = hlines, linetype = "dashed", color = "grey50")
+    if (!is.null(hline_labels) && length(hline_labels) == length(hlines)) {
+      hline_data <- data.frame(yintercept = hlines, label = hline_labels)
+      p <- p + geom_text(data = hline_data, aes(x = 0.55, y = yintercept, label = label),
+                         hjust = 0, vjust = -0.5, size = 3, color = "grey30", inherit.aes = FALSE)
+    }
+  }
+
+  # Y 軸範圍與對數處理
+  if (!is.null(y_limits)) {
+    if (use_log_scale) {
+      safe_limits <- pmax(y_limits, .Machine$double.eps)
+      p <- p + scale_y_log10(limits = safe_limits,
+                             labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+        annotation_logticks(sides = "l")
+    } else {
+      p <- p + scale_y_continuous(limits = y_limits)
+    }
+  } else if (use_log_scale) {
+    min_val_for_log <- min(df_clean[[var]][df_clean[[var]] > 0], na.rm = TRUE)
+    max_val_for_log <- max(df_clean[[var]], na.rm = TRUE)
+    if (is.finite(min_val_for_log) && is.finite(max_val_for_log) && min_val_for_log > 0) {
+      p <- p + scale_y_log10(labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+        annotation_logticks(sides = "l")
+    } else {
+      p <- p + labs(caption = paste(y_label, "無法使用對數尺度 (無正值或範圍問題)"))
+    }
+  }
+
+  return(p)
+}
+
+
+# p-value violin plot
   output$violin_plot_p <- renderPlot({
     df <- simulate_data()
     create_violin_plot(df, "p", title = "p-value 分佈", y_label = "p-value",
